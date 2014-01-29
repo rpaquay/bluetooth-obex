@@ -9,6 +9,12 @@
     }
   }
 
+  function ClearChildren(element) {
+    while (element.firstChild) {
+      element.removeChild(element.firstChild);
+    }
+  }
+
   function CreateActionButton(label, caption, callback) {
     var button = document.createElement("input");
     button.setAttribute("type", "button");
@@ -22,6 +28,7 @@
   }
 
   function GetDeviceProfileClick(device) {
+    ClearChildren(document.getElementById("profile-list"));
     chrome.bluetooth.getProfiles({ device: device }, function (profiles) {
       profiles.forEach(function (profile) {
         DisplayProfile(profile);
@@ -31,6 +38,7 @@
 
   function ListDevicesClick() {
     var table = document.getElementById("device-list");
+    ClearChildren(table);
     chrome.bluetooth.getDevices({
       deviceCallback: function (device) {
         log('Got device.');
