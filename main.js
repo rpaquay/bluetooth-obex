@@ -40,8 +40,37 @@
     });
   }
 
+  function GetAdapterStateClick() {
+    chrome.bluetooth.getAdapterState(function (state) {
+      var table = document.getElementById("adapter-state");
+      var row = document.createElement("tr");
+      table.appendChild(row);
+
+      var td = document.createElement("td");
+      td.innerText = state.address;
+      row.appendChild(td);
+
+      var td = document.createElement("td");
+      td.innerText = state.name;
+      row.appendChild(td);
+
+      var td = document.createElement("td");
+      td.innerText = state.powered;
+      row.appendChild(td);
+
+      var td = document.createElement("td");
+      td.innerText = state.available;
+      row.appendChild(td);
+
+      var td = document.createElement("td");
+      td.innerText = state.discovering;
+      row.appendChild(td);
+    });
+  }
+
   function Setup() {
     document.getElementById('list-devices').onclick = ListDevicesClick;
+    document.getElementById('get-adapter-state').onclick = GetAdapterStateClick;
   }
 
   window.onload = function() {
@@ -125,5 +154,4 @@ var connectToDevice = function(result) {
   }
 };
 
-log('Starting IOIO demo...');
-chrome.bluetooth.getDevices({uuid: kUUID}, connectToDevice);
+//chrome.bluetooth.getDevices({uuid: kUUID}, connectToDevice);

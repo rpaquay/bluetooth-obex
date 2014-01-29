@@ -5,15 +5,24 @@
   </head>
   <body>
     <fieldset>
-      <legend>Liste Paried Devices</legend>
+      <legend>Bluetooth Adapter and Devices</legend>
+      <input type="button" id="get-adapter-state" value="Adapter State" />
       <input type="button" id="list-devices" value="List Devices" />
     </fieldset>
-    <table>
+    <table style="border-width:1em">
+      <caption>Adapter State</caption>
       <thead>
-        <tr><th>Test</th><th>Test2</th><th>Test3</th></tr>
+        <tr><th>Address</th><th>Name</th><th>Powered</th><th>Available</th><th>Discovering</th></tr>
+      </thead>
+      <tbody id="adapter-state">
+      </tbody>
+    </table>
+    <table style="border-width:1em">
+      <caption>Device list</caption>
+      <thead>
+        <tr><th>Address</th><th>Name</th><th>Paired</th><th>Connected</th></tr>
       </thead>
       <tbody id="device-list">
-
       </tbody>
     </table>
     <pre id="log"></pre>
