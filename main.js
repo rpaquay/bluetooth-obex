@@ -9,6 +9,26 @@
     }
   }
 
+  function CreateActionButton(label, caption, callback) {
+    var button = document.createElement("input");
+    button.setAttribute("type", "button");
+    button.setAttribute("value", caption);
+    button.onclick = callback;
+
+    var labelElement = document.createElement("label")
+    labelElement.textContent = label;
+    labelElement.appendChild(button);
+    return labelElement;
+  }
+
+  function GetDeviceProfileClick(device) {
+    chrome.bluetooth.getProfiles({ device: device }, function (profiles) {
+      profiles.forEach(function (profile) {
+        DisplayProfile(profile);
+      });
+    })
+  }
+
   function ListDevicesClick() {
     var table = document.getElementById("device-list");
     chrome.bluetooth.getDevices({
@@ -32,6 +52,14 @@
 
         var td = document.createElement("td");
         td.innerText = device.connected;
+        row.appendChild(td);
+
+        // Actions
+        var td = document.createElement("td");
+        var getProfileAction = CreateActionButton("", "Get Profile", function () {
+          GetDeviceProfileClick(device);
+        });
+        td.appendChild(getProfileAction);
         row.appendChild(td);
       }
     },
@@ -63,6 +91,48 @@
 
     var td = document.createElement("td");
     td.innerText = state.discovering;
+    row.appendChild(td);
+  }
+
+  function DisplayProfile(profile) {
+    var table = document.getElementById("profile-list");
+    var row = document.createElement("tr");
+    table.appendChild(row);
+
+    var td = document.createElement("td");
+    td.innerText = profile.uuid;
+    row.appendChild(td);
+
+    var td = document.createElement("td");
+    td.innerText = profile.name;
+    row.appendChild(td);
+
+    var td = document.createElement("td");
+    td.innerText = profile.channel;
+    row.appendChild(td);
+
+    var td = document.createElement("td");
+    td.innerText = profile.psm;
+    row.appendChild(td);
+
+    var td = document.createElement("td");
+    td.innerText = profile.requireAuthentication;
+    row.appendChild(td);
+
+    var td = document.createElement("td");
+    td.innerText = profile.requireAuthorization;
+    row.appendChild(td);
+
+    var td = document.createElement("td");
+    td.innerText = profile.autoConnect;
+    row.appendChild(td);
+
+    var td = document.createElement("td");
+    td.innerText = profile.version;
+    row.appendChild(td);
+
+    var td = document.createElement("td");
+    td.innerText = profile.features;
     row.appendChild(td);
   }
 
