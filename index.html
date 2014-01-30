@@ -9,6 +9,8 @@
       <legend>Bluetooth Adapter and Devices</legend>
       <input type="button" id="get-adapter-state" value="Adapter State" />
       <input type="button" id="list-devices" value="List Devices" />
+      <input type="button" id="add-ftp-profile" value="Add FTP profile" />
+      <input type="button" id="remove-ftp-profile" value="Remove FTP profile" />
     </fieldset>
     <table>
       <caption>Adapter State</caption>
@@ -48,6 +50,17 @@
         </tr>
       </thead>
       <tbody id="profile-list">
+      </tbody>
+    </table>
+    <table>
+      <caption>Service list</caption>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>UUID</th>
+        </tr>
+      </thead>
+      <tbody id="service-list">
       </tbody>
     </table>
     <pre id="log"></pre>

@@ -27,11 +27,20 @@
     return labelElement;
   }
 
-  function GetDeviceProfileClick(device) {
+  function GetDeviceProfilesClick(device) {
     ClearChildren(document.getElementById("profile-list"));
     chrome.bluetooth.getProfiles({ device: device }, function (profiles) {
       profiles.forEach(function (profile) {
         DisplayProfile(profile);
+      });
+    })
+  }
+
+  function GetDeviceServicesClick(device) {
+    ClearChildren(document.getElementById("service-list"));
+    chrome.bluetooth.getServices({ deviceAddress: device.address }, function (services) {
+      services.forEach(function (service) {
+        DisplayService(service);
       });
     })
   }
@@ -64,10 +73,14 @@
 
         // Actions
         var td = document.createElement("td");
-        var getProfileAction = CreateActionButton("", "Get Profile", function () {
-          GetDeviceProfileClick(device);
+        var getProfilesAction = CreateActionButton("", "Get Profiles", function () {
+          GetDeviceProfilesClick(device);
         });
-        td.appendChild(getProfileAction);
+        td.appendChild(getProfilesAction);
+        var getServicesAction = CreateActionButton("", "Get Services", function () {
+          GetDeviceServicesClick(device);
+        });
+        td.appendChild(getServicesAction);
         row.appendChild(td);
       }
     },
@@ -144,14 +157,66 @@
     row.appendChild(td);
   }
 
+  function DisplayService(service) {
+    var table = document.getElementById("service-list");
+    var row = document.createElement("tr");
+    table.appendChild(row);
+
+    var td = document.createElement("td");
+    td.innerText = service.name;
+    row.appendChild(td);
+
+    var td = document.createElement("td");
+    td.innerText = service.uuid;
+    row.appendChild(td);
+  }
+
   function GetAdapterStateClick() {
     chrome.bluetooth.getAdapterState(DisplayAdapterState);
+  }
+
+  var kFtpProfile = "0000000A-0000-1000-8000-00805F9B34FB";
+
+  function AddFtpProfileClick() {
+    var profile = {
+      uuid: kFtpProfile
+    };
+    chrome.bluetooth.addProfile(profile, function () {
+      if (chrome.runtime.lastError)
+        log("Error adding profile: " + chrome.runtime.lastError.message);
+      else
+        log("Profile added.");
+    });
+  }
+
+  function RemoveFtpProfileClick() {
+    var profile = {
+      uuid: kFtpProfile
+    };
+    chrome.bluetooth.removeProfile(profile, function () {
+      if (chrome.runtime.lastError)
+        log("Error removing profile: " + chrome.runtime.lastError.message);
+      else
+        log("Profile removed.");
+    });
+  }
+
+  function OnAdapterStateChanged(state) {
+    log("OnAdapterStateChanged");
+    DisplayAdapterState(state);
+  }
+
+  function OnConnection(socket) {
+    log("OnConnection");
   }
 
   function Setup() {
     document.getElementById('list-devices').onclick = ListDevicesClick;
     document.getElementById('get-adapter-state').onclick = GetAdapterStateClick;
-    chrome.bluetooth.onAdapterStateChanged.addListener(DisplayAdapterState);
+    document.getElementById('add-ftp-profile').onclick = AddFtpProfileClick;
+    document.getElementById('remove-ftp-profile').onclick = RemoveFtpProfileClick;
+    chrome.bluetooth.onAdapterStateChanged.addListener(OnAdapterStateChanged);
+    chrome.bluetooth.onConnection.addListener(OnConnection);
   }
 
   window.onload = function() {
