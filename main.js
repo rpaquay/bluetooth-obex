@@ -1,4 +1,8 @@
 (function (window, document) {
+  // See https://www.bluetooth.org/en-us/specification/assigned-numbers/service-discovery
+  var kOBEXObjectPush = '00001105-0000-1000-8000-00805F9B34FB';
+  var kOBEXFileTransfer = '00001106-0000-1000-8000-00805F9B34FB';
+
   function log(msg) {
     var msg_str = (typeof (msg) == 'object') ? JSON.stringify(msg) : msg;
     console.log(msg_str);
@@ -45,6 +49,16 @@
     })
   }
 
+  function ObjectPushClick(device) {
+    var profile = { uuid: kOBEXObjectPush };
+    chrome.bluetooth.connect({ device: device, profile: profile }, function() {
+      if (chrome.runtime.lastError)
+        log("Error connecting to Object Push profile: " + chrome.runtime.lastError.message);
+      else
+        log("Successfully connected to Object Push profile.");
+    })
+  }
+
   function ListDevicesClick() {
     var table = document.getElementById("device-list");
     ClearChildren(table);
@@ -73,15 +87,22 @@
 
         // Actions
         var td = document.createElement("td");
+        row.appendChild(td);
+        //
         var getProfilesAction = CreateActionButton("", "Get Profiles", function () {
           GetDeviceProfilesClick(device);
         });
         td.appendChild(getProfilesAction);
+        //
         var getServicesAction = CreateActionButton("", "Get Services", function () {
           GetDeviceServicesClick(device);
         });
         td.appendChild(getServicesAction);
-        row.appendChild(td);
+        //
+        var objectPushAction = CreateActionButton("", "Push", function () {
+          ObjectPushClick(device);
+        });
+        td.appendChild(objectPushAction);
       }
     },
     function () {
@@ -175,29 +196,27 @@
     chrome.bluetooth.getAdapterState(DisplayAdapterState);
   }
 
-  var kFtpProfile = "0000000A-0000-1000-8000-00805F9B34FB";
-
-  function AddFtpProfileClick() {
+  function RegisterObjectPushProfile() {
     var profile = {
-      uuid: kFtpProfile
+      uuid: kOBEXObjectPush
     };
     chrome.bluetooth.addProfile(profile, function () {
       if (chrome.runtime.lastError)
-        log("Error adding profile: " + chrome.runtime.lastError.message);
+        log("Error registering profile: " + chrome.runtime.lastError.message);
       else
-        log("Profile added.");
+        log("Profile successfully registed.");
     });
   }
 
-  function RemoveFtpProfileClick() {
+  function UnregisterObjectPushProfile() {
     var profile = {
-      uuid: kFtpProfile
+      uuid: kOBEXObjectPush
     };
     chrome.bluetooth.removeProfile(profile, function () {
       if (chrome.runtime.lastError)
-        log("Error removing profile: " + chrome.runtime.lastError.message);
+        log("Error unregistering profile: " + chrome.runtime.lastError.message);
       else
-        log("Profile removed.");
+        log("Profile successfully unregistered.");
     });
   }
 
@@ -207,14 +226,14 @@
   }
 
   function OnConnection(socket) {
-    log("OnConnection");
+    log("OnConnection: socket id=" + socket.id + ", device name=" + socket.device.name + ", profile id=" + socket.profile.uuid);
   }
 
   function Setup() {
     document.getElementById('list-devices').onclick = ListDevicesClick;
     document.getElementById('get-adapter-state').onclick = GetAdapterStateClick;
-    document.getElementById('add-ftp-profile').onclick = AddFtpProfileClick;
-    document.getElementById('remove-ftp-profile').onclick = RemoveFtpProfileClick;
+    document.getElementById('register-object-push-profile').onclick = RegisterObjectPushProfile;
+    document.getElementById('unregister-object-push-profile').onclick = UnregisterObjectPushProfile;
     chrome.bluetooth.onAdapterStateChanged.addListener(OnAdapterStateChanged);
     chrome.bluetooth.onConnection.addListener(OnConnection);
   }
