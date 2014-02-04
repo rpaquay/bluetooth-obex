@@ -60,27 +60,27 @@ var Tests;
 var ObexTests;
 (function (ObexTests) {
     Tests.run("Headers", function () {
-        Assert.isTrue(Obex.HeaderIdentifiers.Name.isUnicode());
-        Assert.isFalse(Obex.HeaderIdentifiers.Name.isByteSequence());
-        Assert.isFalse(Obex.HeaderIdentifiers.Count.isUnicode());
-        Assert.isTrue(Obex.HeaderIdentifiers.Count.isInt32());
-        Assert.isFalse(Obex.HeaderIdentifiers.Length.isUnicode());
-        Assert.isTrue(Obex.HeaderIdentifiers.Length.isInt32());
-        Assert.isFalse(Obex.HeaderIdentifiers.Type.isUnicode());
-        Assert.isTrue(Obex.HeaderIdentifiers.Type.isByteSequence());
+        Assert.isTrue(Obex.HeaderIdentifiers.Name.isUnicode);
+        Assert.isFalse(Obex.HeaderIdentifiers.Name.isByteSequence);
+        Assert.isFalse(Obex.HeaderIdentifiers.Count.isUnicode);
+        Assert.isTrue(Obex.HeaderIdentifiers.Count.isInt32);
+        Assert.isFalse(Obex.HeaderIdentifiers.Length.isUnicode);
+        Assert.isTrue(Obex.HeaderIdentifiers.Length.isInt32);
+        Assert.isFalse(Obex.HeaderIdentifiers.Type.isUnicode);
+        Assert.isTrue(Obex.HeaderIdentifiers.Type.isByteSequence);
     });
 
     Tests.run("ByteStream", function () {
-        var stream = new Obex.ByteStream(16000);
-        stream.add(5);
+        var stream = new Obex.ByteStream();
+        stream.add8(5);
         var buffer = stream.toBuffer();
         Assert.isNotNull(buffer);
         Assert.isEqual(1, buffer.byteLength);
     });
 
     Tests.run("Encoder1", function () {
-        var encoder = new Obex.Encoder();
-        var stream = new Obex.ByteStream(16000);
+        var encoder = new Obex.HeaderListBuilder();
+        var stream = new Obex.ByteStream();
         encoder.serialize(stream);
         var buffer = stream.toBuffer();
         Assert.isNotNull(buffer);
@@ -88,21 +88,21 @@ var ObexTests;
     });
 
     Tests.run("Encoder2", function () {
-        var encoder = new Obex.Encoder();
-        encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt8(1);
+        var encoder = new Obex.HeaderListBuilder();
+        encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(1);
 
-        var stream = new Obex.ByteStream(16000);
+        var stream = new Obex.ByteStream();
         encoder.serialize(stream);
         var buffer = stream.toBuffer();
         Assert.isNotNull(buffer);
-        Assert.isEqual(2, buffer.byteLength);
+        Assert.isEqual(5, buffer.byteLength);
     });
 
     Tests.run("Encoder3", function () {
-        var encoder = new Obex.Encoder();
+        var encoder = new Obex.HeaderListBuilder();
 
-        // 1 + 1 bytes
-        encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt8(1);
+        // 1 + 4 bytes
+        encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(1);
 
         // 1 + 2 + 2 * 4 bytes
         encoder.headerList.add(Obex.HeaderIdentifiers.Name).value.setUnicode("toto");
@@ -113,10 +113,22 @@ var ObexTests;
         // 1 + 2 + 100 bytes
         encoder.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(new ArrayBuffer(100));
 
-        var stream = new Obex.ByteStream(16000);
+        var stream = new Obex.ByteStream();
         encoder.serialize(stream);
         var buffer = stream.toBuffer();
         Assert.isNotNull(buffer);
-        Assert.isEqual(121, buffer.byteLength);
+        Assert.isEqual(124, buffer.byteLength);
+    });
+
+    Tests.run("ConnectRequestBuilder", function () {
+        var request = new Obex.ConnectRequestBuilder();
+        request.maxPacketSize = 8 * 1024;
+        request.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(4);
+        request.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(0xf483);
+        var stream = new Obex.ByteStream();
+        request.serialize(stream);
+        var buffer = stream.toBuffer();
+        Assert.isNotNull(buffer);
+        Assert.isEqual(17, buffer.byteLength);
     });
 })(ObexTests || (ObexTests = {}));
