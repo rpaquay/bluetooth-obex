@@ -136,4 +136,67 @@ module ObexTests {
     Assert.isNotNull(buffer);
     Assert.isEqual(17, buffer.byteLength);
   });
+
+  Tests.run("ResponseParser1", () => {
+    var dataStream = new Obex.ByteStream();
+    dataStream.addUint8(Obex.ResponseCode.Success);
+    dataStream.addUint16(10); // length
+    for (var i = 0; i < 7; i++) {
+      dataStream.addUint8(i);
+    }
+
+    var parser = new Obex.ResponseParser();
+    var responseCount = 0;
+    var lastResponse: Obex.Response = null;
+    parser.setHandler(response => {
+      lastResponse = response;
+      responseCount++;
+    });
+
+    parser.addData(dataStream.buffer.toUint8Array().subarray(0, 3));
+    parser.addData(dataStream.buffer.toUint8Array().subarray(3, 10));
+
+    Assert.isEqual(1, responseCount);
+    Assert.isNotNull(lastResponse);
+    Assert.isEqual(Obex.ResponseCode.Success, lastResponse.code);
+    Assert.isEqual(10, lastResponse.length);
+    Assert.isEqual(7, lastResponse.data.byteLength);
+  });
+
+  Tests.run("ResponseParser2", () => {
+    var dataStream = new Obex.ByteStream();
+    dataStream.addUint8(Obex.ResponseCode.Success);
+    dataStream.addUint16(10); // length
+    for (var i = 0; i < 7; i++) {
+      dataStream.addUint8(i);
+    }
+    dataStream.addUint8(Obex.ResponseCode.Created);
+    dataStream.addUint16(4); // length
+    dataStream.addUint8(0xa0);
+
+    var parser = new Obex.ResponseParser();
+    var responseCount = 0;
+    var lastResponse: Obex.Response = null;
+    parser.setHandler(response => {
+      lastResponse = response;
+      responseCount++;
+    });
+
+    parser.addData(dataStream.buffer.toUint8Array().subarray(0, 13));
+
+    Assert.isEqual(1, responseCount);
+    Assert.isNotNull(lastResponse);
+    Assert.isEqual(Obex.ResponseCode.Success, lastResponse.code);
+    Assert.isEqual(10, lastResponse.length);
+    Assert.isEqual(7, lastResponse.data.byteLength);
+    lastResponse = null;
+
+    parser.addData(dataStream.buffer.toUint8Array().subarray(13, 14));
+
+    Assert.isEqual(2, responseCount);
+    Assert.isNotNull(lastResponse);
+    Assert.isEqual(Obex.ResponseCode.Created, lastResponse.code);
+    Assert.isEqual(4, lastResponse.length);
+    Assert.isEqual(1, lastResponse.data.byteLength);
+  });
 }

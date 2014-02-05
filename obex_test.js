@@ -24,7 +24,10 @@ var Obex;
             configurable: true
         });
 
-        GrowableBuffer.prototype.ensureLength = function (length) {
+        // Ensures the buffer capacity is >= length and update the content length to
+        // |length|. Any unitilized bytes between the previous length and the new
+        // length is set to 0.
+        GrowableBuffer.prototype.setLength = function (length) {
             while (this.capacity < length) {
                 this.grow();
             }
@@ -42,18 +45,29 @@ var Obex;
             this._bytes.setUint8(offset, value);
         };
 
+        // Copy the content of |data| into the buffer at |offset|. The buffer length
+        // must be big enough to contain the copied data.
         GrowableBuffer.prototype.setData = function (offset, data) {
             var view = this.toUint8Array();
             view.set(data, offset);
         };
 
-        // Return a UInt8Array wrapping the used data in the buffer.
+        // Return a UInt8Array wrapping the buffer content. Note the underlying
+        // buffer content is not copied, so the returned view is only valid as long
+        // as the buffer is unchanged.
         GrowableBuffer.prototype.toUint8Array = function () {
             return new Uint8Array(this._bytes.buffer, 0, this._length);
         };
 
-        // Return an ArrayBuffer containing a copy of the used data in the buffer.
-        GrowableBuffer.prototype.createArrayBuffer = function () {
+        // Return a DataView wrapping the buffer content. Note the underlying buffer
+        // content is not copied, so the returned view is only valid as long as the
+        // buffer is unchanged.
+        GrowableBuffer.prototype.toDataView = function () {
+            return new DataView(this._bytes.buffer, 0, this._length);
+        };
+
+        // Return an ArrayBuffer containing a *copy* of the buffer content.
+        GrowableBuffer.prototype.toArrayBuffer = function () {
             var view = this.toUint8Array();
             var result = new Uint8Array(view.byteLength);
             result.set(view, 0);
@@ -88,6 +102,13 @@ var Obex;
             enumerable: true,
             configurable: true
         });
+        Object.defineProperty(ByteStream.prototype, "buffer", {
+            get: function () {
+                return this._buffer;
+            },
+            enumerable: true,
+            configurable: true
+        });
 
         ByteStream.prototype.setUint8 = function (offset, value) {
             this._buffer.setUint8(offset, value);
@@ -103,24 +124,24 @@ var Obex;
 
         ByteStream.prototype.addUint8 = function (value) {
             var offset = this.length;
-            this._buffer.ensureLength(offset + 1);
+            this._buffer.setLength(offset + 1);
             this.setUint8(offset, value);
         };
 
         ByteStream.prototype.addUint16 = function (value) {
             var offset = this.length;
-            this._buffer.ensureLength(offset + 2);
+            this._buffer.setLength(offset + 2);
             this.setUint16(offset, value);
         };
 
         ByteStream.prototype.addData = function (data) {
             var offset = this.length;
-            this._buffer.ensureLength(offset + data.byteLength);
+            this._buffer.setLength(offset + data.byteLength);
             this._buffer.setData(offset, data);
         };
 
         ByteStream.prototype.toArrayBuffer = function () {
-            return this._buffer.createArrayBuffer();
+            return this._buffer.toArrayBuffer();
         };
         return ByteStream;
     })();
@@ -467,10 +488,8 @@ var Obex;
     var Response = (function () {
         function Response(data) {
             this._littleEndian = false;
-            this._data = new DataView(data);
-
-            // Skip opcode and length
-            this._responseData = new DataView(data, 3);
+            this._data = new DataView(data.buffer, data.byteOffset, data.byteLength);
+            this._responseData = new DataView(data.buffer, data.byteOffset + 3, data.byteLength - 3); // Skip opcode and length
         }
         Object.defineProperty(Response.prototype, "opCode", {
             get: function () {
@@ -511,35 +530,50 @@ var Obex;
     })();
     Obex.Response = Response;
 
-    var ConnectResponseParser = (function () {
-        function ConnectResponseParser() {
-            this._data = new ByteStream();
+    var ResponseParser = (function () {
+        function ResponseParser() {
+            this._data = new GrowableBuffer();
         }
-        ConnectResponseParser.prototype.addData = function (data) {
-            var view = new DataView(data);
-            for (var i = 0; i < view.byteLength; i++) {
-                this._data.addUint8(view.getUint8(i));
-            }
+        ResponseParser.prototype.addData = function (data) {
+            // Add |data| at end of array.
+            var offset = this._data.length;
+            this._data.setLength(this._data.length + data.byteLength);
+            this._data.setData(offset, data);
 
+            // Parse data to figure out if we have a complete response.
             this.parseData();
         };
 
-        Object.defineProperty(ConnectResponseParser.prototype, "onMessage", {
-            set: function (value) {
-                this._onMessage = value;
-            },
-            enumerable: true,
-            configurable: true
-        });
+        ResponseParser.prototype.setHandler = function (value) {
+            this._onResponse = value;
+        };
 
-        ConnectResponseParser.prototype.parseData = function () {
+        ResponseParser.prototype.parseData = function () {
             if (this._data.length < 3)
                 return;
-            //var opCode =
+
+            var response = new Response(this._data.toUint8Array());
+            var responseLength = response.length;
+            if (responseLength > this._data.length)
+                return;
+            if (responseLength <= this._data.length) {
+                response = new Response(this._data.toUint8Array().subarray(0, responseLength));
+            }
+            this.flushResponse(responseLength);
+            this._onResponse(response);
         };
-        return ConnectResponseParser;
+
+        ResponseParser.prototype.flushResponse = function (responseLength) {
+            var remaining_length = this._data.length - responseLength;
+            var remaining_data = this._data.toUint8Array().subarray(responseLength, this._data.length);
+            var new_data = new GrowableBuffer();
+            new_data.setLength(remaining_length);
+            new_data.setData(0, remaining_data);
+            this._data = new_data;
+        };
+        return ResponseParser;
     })();
-    Obex.ConnectResponseParser = ConnectResponseParser;
+    Obex.ResponseParser = ResponseParser;
 })(Obex || (Obex = {}));
 /// <reference path="obex.ts"/>
 var Assert;
@@ -690,5 +724,68 @@ var ObexTests;
         var buffer = stream.toArrayBuffer();
         Assert.isNotNull(buffer);
         Assert.isEqual(17, buffer.byteLength);
+    });
+
+    Tests.run("ResponseParser1", function () {
+        var dataStream = new Obex.ByteStream();
+        dataStream.addUint8(32 /* Success */);
+        dataStream.addUint16(10); // length
+        for (var i = 0; i < 7; i++) {
+            dataStream.addUint8(i);
+        }
+
+        var parser = new Obex.ResponseParser();
+        var responseCount = 0;
+        var lastResponse = null;
+        parser.setHandler(function (response) {
+            lastResponse = response;
+            responseCount++;
+        });
+
+        parser.addData(dataStream.buffer.toUint8Array().subarray(0, 3));
+        parser.addData(dataStream.buffer.toUint8Array().subarray(3, 10));
+
+        Assert.isEqual(1, responseCount);
+        Assert.isNotNull(lastResponse);
+        Assert.isEqual(32 /* Success */, lastResponse.code);
+        Assert.isEqual(10, lastResponse.length);
+        Assert.isEqual(7, lastResponse.data.byteLength);
+    });
+
+    Tests.run("ResponseParser2", function () {
+        var dataStream = new Obex.ByteStream();
+        dataStream.addUint8(32 /* Success */);
+        dataStream.addUint16(10); // length
+        for (var i = 0; i < 7; i++) {
+            dataStream.addUint8(i);
+        }
+        dataStream.addUint8(33 /* Created */);
+        dataStream.addUint16(4); // length
+        dataStream.addUint8(0xa0);
+
+        var parser = new Obex.ResponseParser();
+        var responseCount = 0;
+        var lastResponse = null;
+        parser.setHandler(function (response) {
+            lastResponse = response;
+            responseCount++;
+        });
+
+        parser.addData(dataStream.buffer.toUint8Array().subarray(0, 13));
+
+        Assert.isEqual(1, responseCount);
+        Assert.isNotNull(lastResponse);
+        Assert.isEqual(32 /* Success */, lastResponse.code);
+        Assert.isEqual(10, lastResponse.length);
+        Assert.isEqual(7, lastResponse.data.byteLength);
+        lastResponse = null;
+
+        parser.addData(dataStream.buffer.toUint8Array().subarray(13, 14));
+
+        Assert.isEqual(2, responseCount);
+        Assert.isNotNull(lastResponse);
+        Assert.isEqual(33 /* Created */, lastResponse.code);
+        Assert.isEqual(4, lastResponse.length);
+        Assert.isEqual(1, lastResponse.data.byteLength);
     });
 })(ObexTests || (ObexTests = {}));
