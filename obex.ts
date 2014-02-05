@@ -2,58 +2,74 @@
 // It is a request/response message protocol where each request/response
 // message is a set of headers followed by a body.
 
-export module Obex {
+module Obex {
+  // Simple growable byte stream
   export class ByteStream {
-    private _bytes: Uint8Array;
-    private _offset = 0;
+    private _bytes = new DataView(new ArrayBuffer(8));
+    private _length = 0;
 
-    public constructor() {
-      this._bytes = new Uint8Array(16000);
-    }
+    public get offset(): number { return this._length; }
+    public get length(): number { return this._length; }
 
-    public get offset(): number { return this._offset; }
-    public get length(): number { return this._offset; }
-
-    public update8(offset: number, value: number) {
+    public setByte(offset: number, value: number) {
       if (value < 0 || value > 255)
         throw new Error("Value must be between 0 and 255.");
-      if (offset < 0 || offset > this._offset)
-        throw new Error("Offset must be between 0 and " + this._offset + ".");
+      if (offset < 0 || offset > this._length)
+        throw new Error("Offset must be between 0 and " + this._length + ".");
 
-      this._bytes.set(offset, value);
+      this._bytes.setUint8(offset, value);
     }
 
-    public add8(value: number) {
-      this.update8(this._offset, value);
-      this._offset++;
+    public addByte(value: number) {
+      this.growIfNeeded();
+      this.setByte(this._length, value);
+      this._length++;
     }
 
     public add16(value: number) {
       if (value < 0 || value > 65535)
         throw new Error("Value must be between 0 and 65535.");
 
-      this.add8((value & 0xff00) >> 8);
-      this.add8((value & 0x00ff));
+      this.addByte((value & 0xff00) >> 8);
+      this.addByte((value & 0x00ff));
     }
 
     public update16(offset: number, value: number) {
       if (value < 0 || value > 65535)
         throw new Error("Value must be between 0 and 65535.");
 
-      this.update8(offset, (value & 0xff00) >> 8);
-      this.update8(offset + 1, (value & 0x00ff));
+      this.setByte(offset, (value & 0xff00) >> 8);
+      this.setByte(offset + 1, (value & 0x00ff));
     }
 
     public toBuffer(): ArrayBuffer {
-      var size = this._offset;
+      var size = this._length;
       var view = new Uint8Array(this._bytes.buffer, 0, size);
       var result = new Uint8Array(size);
       result.set(view, 0);
       return result.buffer;
     }
+
+    private growIfNeeded(): void {
+      if (this._length === this._bytes.byteLength)
+        this.grow();
+    }
+
+    private grow(): void {
+      var new_len = this._bytes.byteLength * 2;
+      var new_buffer = new ArrayBuffer(new_len);
+
+      // Copy old buffer content to new one
+      var old_array = new Uint8Array(this._bytes.buffer);
+      var new_array = new Uint8Array(new_buffer);
+      new_array.set(old_array, 0);
+
+      // Assign new buffer
+      this._bytes = new DataView(new_buffer);
+    }
   }
 
-  // Headers identifers (and hepler functions)
+  // Headers identifier abstraction + helper functions.
   export class HeaderIdentifier {
     public constructor(public value: number) {
     }
@@ -79,6 +95,7 @@ export module Obex {
     }
   }
 
+  // Header type (2 high bits of header identifier value)
   export enum HeaderValueKind {
     Unicode = 0x00,
     ByteSequence = 0x40,
@@ -109,11 +126,22 @@ export module Obex {
       this._byteSequence = null;
     }
 
-    private reset(): void {
-      this._kind = 0;
-      this._intValue = 0;
-      this._stringValue = null;
-      this._byteSequence = null;
+    public get asInt(): number {
+      if (this._kind != HeaderValueKind.Int8 && this._kind != HeaderValueKind.Int32)
+        throw new Error("Value must be of Int8 or Int32 kind.");
+      return this._intValue;
+    }
+
+    public get asString(): string {
+      if (this._kind != HeaderValueKind.Unicode)
+        throw new Error("Value must be of Unicode kind.");
+      return this._stringValue;
+    }
+
+    public get asArrayBuffer(): ArrayBuffer {
+      if (this._kind != HeaderValueKind.ByteSequence)
+        throw new Error("Value must be of ByteSequence kind.");
+      return this._byteSequence;
     }
 
     public setInt8(value: number): void {
@@ -150,7 +178,7 @@ export module Obex {
 
     public serialize(stream: ByteStream): void {
       if (this._kind === HeaderValueKind.Int8) {
-        stream.add8(this._intValue);
+        stream.addByte(this._intValue);
       } else if (this._kind === HeaderValueKind.Int32) {
         stream.add16((this._intValue & 0xffff0000) >>> 16);
         stream.add16((this._intValue & 0x0000ffff));
@@ -165,7 +193,7 @@ export module Obex {
         var view = new Uint8Array(this._byteSequence);
         // TODO(rpaquay): This could be more efficient using "view" operations.
         for (var i = 0; i < view.byteLength; i++) {
-          stream.add8(view.get(i));
+          stream.addByte(view.get(i));
         }
       } else {
         throw new Error("Invalid value type.");
@@ -179,8 +207,8 @@ export module Obex {
       private _value: HeaderValue) {
     }
 
-    public get identifier() { return this._identifier; }
-    public get value() { return this._value; }
+    public get identifier(): HeaderIdentifier { return this._identifier; }
+    public get value(): HeaderValue { return this._value; }
   }
 
   export class HeaderList {
@@ -203,7 +231,7 @@ export module Obex {
 
     public serialize(stream: ByteStream): void {
       this.forEach(entry => {
-        stream.add8(entry.identifier.value);
+        stream.addByte(entry.identifier.value);
         entry.value.serialize(stream);
       });
     }
@@ -229,7 +257,7 @@ export module Obex {
 
     public serialize(stream: ByteStream): void {
       this.headerList.forEach(entry => {
-        stream.add8(entry.identifier.value);
+        stream.addByte(entry.identifier.value);
         entry.value.serialize(stream);
       });
     }
@@ -251,13 +279,17 @@ export module Obex {
     public get maxPacketSize(): number { return this._maxPacketSize; }
     public set maxPacketSize(value: number) { this._maxPacketSize = value; }
     public get headerList(): HeaderList { return this._headers.headerList; }
+    public get count(): number { return this._headers.headerList.add(Obex.HeaderIdentifiers.Count).value.asInt; }
+    public set count(value: number) { this._headers.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(value); }
+    public get length(): number { return this._headers.headerList.add(Obex.HeaderIdentifiers.Length).value.asInt; }
+    public set length(value: number) { this._headers.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(value); }
 
     public serialize(stream: ByteStream): void {
-      stream.add8(this.opCode);
+      stream.addByte(this.opCode);
       var lengthOffset = stream.offset;
       stream.add16(0); // request length unknown at this time
-      stream.add8(this.obexVersion);
-      stream.add8(this.flags);
+      stream.addByte(this.obexVersion);
+      stream.addByte(this.flags);
       stream.add16(this.maxPacketSize);
       this.headerList.serialize(stream);
       stream.update16(lengthOffset, stream.length);

@@ -1,36 +1,39 @@
-import obex = require("./obex");
-var Obex = obex.Obex;
+/// <reference path="obex.ts"/>
 
 module Assert {
   export function fail(msg: string): void {
     throw new Error(msg);
   }
 
-  function assertImpl(value: boolean, msg?: string) {
+  function assertImpl(value: boolean, msg: string) {
     if (!value) {
-      fail("Assertion failure (msg=" + msg + ")");
+      if (msg)
+        msg = "Assertion failure: " + msg;
+      else
+        msg = "Assertion failure.";
+      fail(msg);
     }
   }
 
   export function isTrue(value: boolean, msg?: string): void {
-    assertImpl(value);
+    assertImpl(value, msg);
   }
 
   export function isFalse(value: boolean, msg?: string): void {
-    assertImpl(!value);
+    assertImpl(!value, msg);
   }
 
   export function isNull(value: any, msg?: string): void {
-    assertImpl(value === null);
+    assertImpl(value === null, msg);
   }
 
   export function isNotNull(value: any, msg?: string): void {
-    assertImpl(value !== null);
+    assertImpl(value !== null, msg);
   }
 
   export function isEqual<T>(expected: T, value: T, msg?: string): void {
-    if (value != expected) {
-      Assert.fail("Expected value " + expected + " instead of " + value);
+    if (value !== expected) {
+      fail("Expected value " + expected + " instead of " + value);
     }
   }
 }
@@ -61,12 +64,27 @@ module ObexTests {
     Assert.isTrue(Obex.HeaderIdentifiers.Type.isByteSequence);
   });
 
-  Tests.run("ByteStream", () => {
+  Tests.run("ByteStream1", () => {
     var stream = new Obex.ByteStream();
-    stream.add8(5);
+    stream.addByte(5);
     var buffer = stream.toBuffer();
     Assert.isNotNull(buffer);
     Assert.isEqual(1, buffer.byteLength);
+  });
+
+  Tests.run("ByteStream2", () => {
+    var stream = new Obex.ByteStream();
+    for (var i = 0; i < 256; i++) {
+      stream.addByte(Math.floor(i / 2));
+    }
+    var buffer = stream.toBuffer();
+    Assert.isNotNull(buffer);
+    Assert.isEqual(256, buffer.byteLength);
+
+    var view = new DataView(buffer);
+    for (var i = 0; i < 256; i++) {
+      Assert.isEqual(Math.floor(i / 2), view.getUint8(i));
+    }
   });
 
   Tests.run("Encoder1", () => {
