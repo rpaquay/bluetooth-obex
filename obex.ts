@@ -3,56 +3,48 @@
 // message is a set of headers followed by a body.
 
 module Obex {
-  // Simple growable byte stream
-  export class ByteStream {
+  // Simple growable buffer
+  export class GrowableBuffer {
     private _bytes = new DataView(new ArrayBuffer(8));
     private _length = 0;
 
-    public get offset(): number { return this._length; }
+    public get capacity(): number { return this._bytes.byteLength; }
     public get length(): number { return this._length; }
 
-    public setByte(offset: number, value: number) {
+    public ensureLength(length: number): void {
+      while (this.capacity < length) {
+        this.grow();
+      }
+      this._length = length;
+    }
+
+    // Set a byte value at a given offset (the buffer must be big enough to allow
+    // writing at that offset).
+    public setUint8(offset: number, value: number) {
       if (value < 0 || value > 255)
         throw new Error("Value must be between 0 and 255.");
-      if (offset < 0 || offset > this._length)
-        throw new Error("Offset must be between 0 and " + this._length + ".");
+      if (offset < 0 || offset >= this._length)
+        throw new Error("Offset must be between 0 and " + (this._length - 1) + ".");
 
       this._bytes.setUint8(offset, value);
     }
 
-    public addByte(value: number) {
-      this.growIfNeeded();
-      this.setByte(this._length, value);
-      this._length++;
+    public setData(offset: number, data: Uint8Array) {
+      var view = this.toUint8Array();
+      view.set(data, offset);
     }
 
-    public add16(value: number) {
-      if (value < 0 || value > 65535)
-        throw new Error("Value must be between 0 and 65535.");
-
-      this.addByte((value & 0xff00) >> 8);
-      this.addByte((value & 0x00ff));
+    // Return a UInt8Array wrapping the used data in the buffer.
+    public toUint8Array(): Uint8Array {
+      return new Uint8Array(this._bytes.buffer, 0, this._length);
     }
 
-    public update16(offset: number, value: number) {
-      if (value < 0 || value > 65535)
-        throw new Error("Value must be between 0 and 65535.");
-
-      this.setByte(offset, (value & 0xff00) >> 8);
-      this.setByte(offset + 1, (value & 0x00ff));
-    }
-
-    public toBuffer(): ArrayBuffer {
-      var size = this._length;
-      var view = new Uint8Array(this._bytes.buffer, 0, size);
-      var result = new Uint8Array(size);
+    // Return an ArrayBuffer containing a copy of the used data in the buffer.
+    public createArrayBuffer(): ArrayBuffer {
+      var view = this.toUint8Array();
+      var result = new Uint8Array(view.byteLength);
       result.set(view, 0);
       return result.buffer;
-    }
-
-    private growIfNeeded(): void {
-      if (this._length === this._bytes.byteLength)
-        this.grow();
     }
 
     private grow(): void {
@@ -66,6 +58,47 @@ module Obex {
 
       // Assign new buffer
       this._bytes = new DataView(new_buffer);
+    }
+  }
+
+  // Simple growable byte stream
+  export class ByteStream {
+    private _buffer = new GrowableBuffer();
+
+    public get length(): number { return this._buffer.length; }
+
+    public setUint8(offset: number, value: number) {
+      this._buffer.setUint8(offset, value);
+    }
+
+    public setUint16(offset: number, value: number) {
+      if (value < 0 || value > 65535)
+        throw new Error("Value must be between 0 and 65535.");
+
+      this.setUint8(offset, (value & 0xff00) >> 8);
+      this.setUint8(offset + 1, (value & 0x00ff));
+    }
+
+    public addUint8(value: number) {
+      var offset = this.length;
+      this._buffer.ensureLength(offset + 1);
+      this.setUint8(offset, value);
+    }
+
+    public addUint16(value: number) {
+      var offset = this.length;
+      this._buffer.ensureLength(offset + 2);
+      this.setUint16(offset, value);
+    }
+
+    public addData(data: Uint8Array) {
+      var offset = this.length;
+      this._buffer.ensureLength(offset + data.byteLength);
+      this._buffer.setData(offset, data);
+    }
+
+    public toArrayBuffer(): ArrayBuffer {
+      return this._buffer.createArrayBuffer();
     }
   }
 
@@ -178,23 +211,20 @@ module Obex {
 
     public serialize(stream: ByteStream): void {
       if (this._kind === HeaderValueKind.Int8) {
-        stream.addByte(this._intValue);
+        stream.addUint8(this._intValue);
       } else if (this._kind === HeaderValueKind.Int32) {
-        stream.add16((this._intValue & 0xffff0000) >>> 16);
-        stream.add16((this._intValue & 0x0000ffff));
+        stream.addUint16((this._intValue & 0xffff0000) >>> 16);
+        stream.addUint16((this._intValue & 0x0000ffff));
       } else if (this._kind === HeaderValueKind.Unicode) {
-        stream.add16(this._stringValue.length);
+        stream.addUint16(this._stringValue.length);
         for (var i = 0; i < this._stringValue.length; i++) {
           var c = this._stringValue.charCodeAt(i);
-          stream.add16(c);
+          stream.addUint16(c);
         }
       } else if (this._kind === HeaderValueKind.ByteSequence) {
-        stream.add16(this._byteSequence.byteLength);
+        stream.addUint16(this._byteSequence.byteLength);
         var view = new Uint8Array(this._byteSequence);
-        // TODO(rpaquay): This could be more efficient using "view" operations.
-        for (var i = 0; i < view.byteLength; i++) {
-          stream.addByte(view.get(i));
-        }
+        stream.addData(view);
       } else {
         throw new Error("Invalid value type.");
       }
@@ -231,7 +261,7 @@ module Obex {
 
     public serialize(stream: ByteStream): void {
       this.forEach(entry => {
-        stream.addByte(entry.identifier.value);
+        stream.addUint8(entry.identifier.value);
         entry.value.serialize(stream);
       });
     }
@@ -257,7 +287,7 @@ module Obex {
 
     public serialize(stream: ByteStream): void {
       this.headerList.forEach(entry => {
-        stream.addByte(entry.identifier.value);
+        stream.addUint8(entry.identifier.value);
         entry.value.serialize(stream);
       });
     }
@@ -285,14 +315,65 @@ module Obex {
     public set length(value: number) { this._headers.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(value); }
 
     public serialize(stream: ByteStream): void {
-      stream.addByte(this.opCode);
-      var lengthOffset = stream.offset;
-      stream.add16(0); // request length unknown at this time
-      stream.addByte(this.obexVersion);
-      stream.addByte(this.flags);
-      stream.add16(this.maxPacketSize);
+      stream.addUint8(this.opCode);
+      var lengthOffset = stream.length;
+      stream.addUint16(0); // request length unknown at this time
+      stream.addUint8(this.obexVersion);
+      stream.addUint8(this.flags);
+      stream.addUint16(this.maxPacketSize);
       this.headerList.serialize(stream);
-      stream.update16(lengthOffset, stream.length);
+      stream.setUint16(lengthOffset, stream.length);
+    }
+  }
+
+  export enum ResponseCode {
+    Reserved = 0x00,
+    Continue = 0x10,
+    Success = 0x20,
+    Created = 0x21,
+
+    MultipleChoice = 0x30,
+  }
+
+  export class Response {
+    private _data: DataView;
+    private _responseData: DataView;
+    private _littleEndian = false;
+
+    public constructor(data: ArrayBuffer) {
+      this._data = new DataView(data);
+      // Skip opcode and length
+      this._responseData = new DataView(data, 3);
+    }
+    public get opCode(): number { return this._data.getUint8(0); }
+    public get isFinal(): boolean { return (this.opCode & 0x80) !== 0; }
+    public get code(): ResponseCode { return this.opCode & 0x7f; }
+    public get length(): number { return this._data.getUint16(1, this._littleEndian); }
+    public get data(): DataView { return this._responseData; }
+  }
+
+  export class ConnectResponseParser {
+    private _data = new ByteStream();
+    private _onMessage: (ConnecteResponse) => void;
+
+    public addData(data: ArrayBuffer) {
+      var view = new DataView(data);
+      for (var i = 0; i < view.byteLength; i++) {
+        this._data.addUint8(view.getUint8(i));
+      }
+
+      this.parseData();
+    }
+
+    public set onMessage(value: (ConnecteResponse) => void) {
+      this._onMessage = value;
+    }
+
+    private parseData(): void {
+      if (this._data.length < 3)
+        return;
+
+      //var opCode = 
     }
   }
 }

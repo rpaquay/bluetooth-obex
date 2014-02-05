@@ -76,7 +76,7 @@ function ObjectPushClick(device) {
     builder.length = 100;
     var stream = new Obex.ByteStream();
     builder.serialize(stream);
-    var buffer = stream.toBuffer();
+    var buffer = stream.toArrayBuffer();
     chrome.bluetooth.write({ socket: socket, data: buffer }, (result: number) => {
       if (chrome.runtime.lastError) {
         log("Error sending packet to peer: " + chrome.runtime.lastError.message);

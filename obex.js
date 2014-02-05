@@ -3,20 +3,20 @@
 // message is a set of headers followed by a body.
 var Obex;
 (function (Obex) {
-    // Simple growable byte stream
-    var ByteStream = (function () {
-        function ByteStream() {
+    // Simple growable buffer
+    var GrowableBuffer = (function () {
+        function GrowableBuffer() {
             this._bytes = new DataView(new ArrayBuffer(8));
             this._length = 0;
         }
-        Object.defineProperty(ByteStream.prototype, "offset", {
+        Object.defineProperty(GrowableBuffer.prototype, "capacity", {
             get: function () {
-                return this._length;
+                return this._bytes.byteLength;
             },
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(ByteStream.prototype, "length", {
+        Object.defineProperty(GrowableBuffer.prototype, "length", {
             get: function () {
                 return this._length;
             },
@@ -24,51 +24,43 @@ var Obex;
             configurable: true
         });
 
-        ByteStream.prototype.setByte = function (offset, value) {
+        GrowableBuffer.prototype.ensureLength = function (length) {
+            while (this.capacity < length) {
+                this.grow();
+            }
+            this._length = length;
+        };
+
+        // Set a byte value at a given offset (the buffer must be big enough to allow
+        // writing at that offset).
+        GrowableBuffer.prototype.setUint8 = function (offset, value) {
             if (value < 0 || value > 255)
                 throw new Error("Value must be between 0 and 255.");
-            if (offset < 0 || offset > this._length)
-                throw new Error("Offset must be between 0 and " + this._length + ".");
+            if (offset < 0 || offset >= this._length)
+                throw new Error("Offset must be between 0 and " + (this._length - 1) + ".");
 
             this._bytes.setUint8(offset, value);
         };
 
-        ByteStream.prototype.addByte = function (value) {
-            this.growIfNeeded();
-            this.setByte(this._length, value);
-            this._length++;
+        GrowableBuffer.prototype.setData = function (offset, data) {
+            var view = this.toUint8Array();
+            view.set(data, offset);
         };
 
-        ByteStream.prototype.add16 = function (value) {
-            if (value < 0 || value > 65535)
-                throw new Error("Value must be between 0 and 65535.");
-
-            this.addByte((value & 0xff00) >> 8);
-            this.addByte((value & 0x00ff));
+        // Return a UInt8Array wrapping the used data in the buffer.
+        GrowableBuffer.prototype.toUint8Array = function () {
+            return new Uint8Array(this._bytes.buffer, 0, this._length);
         };
 
-        ByteStream.prototype.update16 = function (offset, value) {
-            if (value < 0 || value > 65535)
-                throw new Error("Value must be between 0 and 65535.");
-
-            this.setByte(offset, (value & 0xff00) >> 8);
-            this.setByte(offset + 1, (value & 0x00ff));
-        };
-
-        ByteStream.prototype.toBuffer = function () {
-            var size = this._length;
-            var view = new Uint8Array(this._bytes.buffer, 0, size);
-            var result = new Uint8Array(size);
+        // Return an ArrayBuffer containing a copy of the used data in the buffer.
+        GrowableBuffer.prototype.createArrayBuffer = function () {
+            var view = this.toUint8Array();
+            var result = new Uint8Array(view.byteLength);
             result.set(view, 0);
             return result.buffer;
         };
 
-        ByteStream.prototype.growIfNeeded = function () {
-            if (this._length === this._bytes.byteLength)
-                this.grow();
-        };
-
-        ByteStream.prototype.grow = function () {
+        GrowableBuffer.prototype.grow = function () {
             var new_len = this._bytes.byteLength * 2;
             var new_buffer = new ArrayBuffer(new_len);
 
@@ -79,6 +71,56 @@ var Obex;
 
             // Assign new buffer
             this._bytes = new DataView(new_buffer);
+        };
+        return GrowableBuffer;
+    })();
+    Obex.GrowableBuffer = GrowableBuffer;
+
+    // Simple growable byte stream
+    var ByteStream = (function () {
+        function ByteStream() {
+            this._buffer = new GrowableBuffer();
+        }
+        Object.defineProperty(ByteStream.prototype, "length", {
+            get: function () {
+                return this._buffer.length;
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        ByteStream.prototype.setUint8 = function (offset, value) {
+            this._buffer.setUint8(offset, value);
+        };
+
+        ByteStream.prototype.setUint16 = function (offset, value) {
+            if (value < 0 || value > 65535)
+                throw new Error("Value must be between 0 and 65535.");
+
+            this.setUint8(offset, (value & 0xff00) >> 8);
+            this.setUint8(offset + 1, (value & 0x00ff));
+        };
+
+        ByteStream.prototype.addUint8 = function (value) {
+            var offset = this.length;
+            this._buffer.ensureLength(offset + 1);
+            this.setUint8(offset, value);
+        };
+
+        ByteStream.prototype.addUint16 = function (value) {
+            var offset = this.length;
+            this._buffer.ensureLength(offset + 2);
+            this.setUint16(offset, value);
+        };
+
+        ByteStream.prototype.addData = function (data) {
+            var offset = this.length;
+            this._buffer.ensureLength(offset + data.byteLength);
+            this._buffer.setData(offset, data);
+        };
+
+        ByteStream.prototype.toArrayBuffer = function () {
+            return this._buffer.createArrayBuffer();
         };
         return ByteStream;
     })();
@@ -226,23 +268,20 @@ var Obex;
 
         HeaderValue.prototype.serialize = function (stream) {
             if (this._kind === 128 /* Int8 */) {
-                stream.addByte(this._intValue);
+                stream.addUint8(this._intValue);
             } else if (this._kind === 192 /* Int32 */) {
-                stream.add16((this._intValue & 0xffff0000) >>> 16);
-                stream.add16((this._intValue & 0x0000ffff));
+                stream.addUint16((this._intValue & 0xffff0000) >>> 16);
+                stream.addUint16((this._intValue & 0x0000ffff));
             } else if (this._kind === 0 /* Unicode */) {
-                stream.add16(this._stringValue.length);
+                stream.addUint16(this._stringValue.length);
                 for (var i = 0; i < this._stringValue.length; i++) {
                     var c = this._stringValue.charCodeAt(i);
-                    stream.add16(c);
+                    stream.addUint16(c);
                 }
             } else if (this._kind === 64 /* ByteSequence */) {
-                stream.add16(this._byteSequence.byteLength);
+                stream.addUint16(this._byteSequence.byteLength);
                 var view = new Uint8Array(this._byteSequence);
-
-                for (var i = 0; i < view.byteLength; i++) {
-                    stream.addByte(view.get(i));
-                }
+                stream.addData(view);
             } else {
                 throw new Error("Invalid value type.");
             }
@@ -295,7 +334,7 @@ var Obex;
 
         HeaderList.prototype.serialize = function (stream) {
             this.forEach(function (entry) {
-                stream.addByte(entry.identifier.value);
+                stream.addUint8(entry.identifier.value);
                 entry.value.serialize(stream);
             });
         };
@@ -329,7 +368,7 @@ var Obex;
 
         HeaderListBuilder.prototype.serialize = function (stream) {
             this.headerList.forEach(function (entry) {
-                stream.addByte(entry.identifier.value);
+                stream.addUint8(entry.identifier.value);
                 entry.value.serialize(stream);
             });
         };
@@ -402,17 +441,104 @@ var Obex;
         });
 
         ConnectRequestBuilder.prototype.serialize = function (stream) {
-            stream.addByte(this.opCode);
-            var lengthOffset = stream.offset;
-            stream.add16(0); // request length unknown at this time
-            stream.addByte(this.obexVersion);
-            stream.addByte(this.flags);
-            stream.add16(this.maxPacketSize);
+            stream.addUint8(this.opCode);
+            var lengthOffset = stream.length;
+            stream.addUint16(0); // request length unknown at this time
+            stream.addUint8(this.obexVersion);
+            stream.addUint8(this.flags);
+            stream.addUint16(this.maxPacketSize);
             this.headerList.serialize(stream);
-            stream.update16(lengthOffset, stream.length);
+            stream.setUint16(lengthOffset, stream.length);
         };
         return ConnectRequestBuilder;
     })();
     Obex.ConnectRequestBuilder = ConnectRequestBuilder;
+
+    (function (ResponseCode) {
+        ResponseCode[ResponseCode["Reserved"] = 0x00] = "Reserved";
+        ResponseCode[ResponseCode["Continue"] = 0x10] = "Continue";
+        ResponseCode[ResponseCode["Success"] = 0x20] = "Success";
+        ResponseCode[ResponseCode["Created"] = 0x21] = "Created";
+
+        ResponseCode[ResponseCode["MultipleChoice"] = 0x30] = "MultipleChoice";
+    })(Obex.ResponseCode || (Obex.ResponseCode = {}));
+    var ResponseCode = Obex.ResponseCode;
+
+    var Response = (function () {
+        function Response(data) {
+            this._littleEndian = false;
+            this._data = new DataView(data);
+
+            // Skip opcode and length
+            this._responseData = new DataView(data, 3);
+        }
+        Object.defineProperty(Response.prototype, "opCode", {
+            get: function () {
+                return this._data.getUint8(0);
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(Response.prototype, "isFinal", {
+            get: function () {
+                return (this.opCode & 0x80) !== 0;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(Response.prototype, "code", {
+            get: function () {
+                return this.opCode & 0x7f;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(Response.prototype, "length", {
+            get: function () {
+                return this._data.getUint16(1, this._littleEndian);
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(Response.prototype, "data", {
+            get: function () {
+                return this._responseData;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        return Response;
+    })();
+    Obex.Response = Response;
+
+    var ConnectResponseParser = (function () {
+        function ConnectResponseParser() {
+            this._data = new ByteStream();
+        }
+        ConnectResponseParser.prototype.addData = function (data) {
+            var view = new DataView(data);
+            for (var i = 0; i < view.byteLength; i++) {
+                this._data.addUint8(view.getUint8(i));
+            }
+
+            this.parseData();
+        };
+
+        Object.defineProperty(ConnectResponseParser.prototype, "onMessage", {
+            set: function (value) {
+                this._onMessage = value;
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        ConnectResponseParser.prototype.parseData = function () {
+            if (this._data.length < 3)
+                return;
+            //var opCode =
+        };
+        return ConnectResponseParser;
+    })();
+    Obex.ConnectResponseParser = ConnectResponseParser;
 })(Obex || (Obex = {}));
 //# sourceMappingURL=obex.js.map

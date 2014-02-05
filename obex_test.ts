@@ -66,8 +66,8 @@ module ObexTests {
 
   Tests.run("ByteStream1", () => {
     var stream = new Obex.ByteStream();
-    stream.addByte(5);
-    var buffer = stream.toBuffer();
+    stream.addUint8(5);
+    var buffer = stream.toArrayBuffer();
     Assert.isNotNull(buffer);
     Assert.isEqual(1, buffer.byteLength);
   });
@@ -75,9 +75,9 @@ module ObexTests {
   Tests.run("ByteStream2", () => {
     var stream = new Obex.ByteStream();
     for (var i = 0; i < 256; i++) {
-      stream.addByte(Math.floor(i / 2));
+      stream.addUint8(Math.floor(i / 2));
     }
-    var buffer = stream.toBuffer();
+    var buffer = stream.toArrayBuffer();
     Assert.isNotNull(buffer);
     Assert.isEqual(256, buffer.byteLength);
 
@@ -91,7 +91,7 @@ module ObexTests {
     var encoder = new Obex.HeaderListBuilder();
     var stream = new Obex.ByteStream();
     encoder.serialize(stream);
-    var buffer = stream.toBuffer();
+    var buffer = stream.toArrayBuffer();
     Assert.isNotNull(buffer);
     Assert.isEqual(0, buffer.byteLength);
   });
@@ -102,7 +102,7 @@ module ObexTests {
 
     var stream = new Obex.ByteStream();
     encoder.serialize(stream);
-    var buffer = stream.toBuffer();
+    var buffer = stream.toArrayBuffer();
     Assert.isNotNull(buffer);
     Assert.isEqual(5, buffer.byteLength);
   });
@@ -120,7 +120,7 @@ module ObexTests {
 
     var stream = new Obex.ByteStream();
     encoder.serialize(stream);
-    var buffer = stream.toBuffer();
+    var buffer = stream.toArrayBuffer();
     Assert.isNotNull(buffer);
     Assert.isEqual(124, buffer.byteLength);
   });
@@ -132,7 +132,7 @@ module ObexTests {
     request.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(0xf483);
     var stream = new Obex.ByteStream();
     request.serialize(stream);
-    var buffer = stream.toBuffer();
+    var buffer = stream.toArrayBuffer();
     Assert.isNotNull(buffer);
     Assert.isEqual(17, buffer.byteLength);
   });
