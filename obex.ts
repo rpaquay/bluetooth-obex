@@ -3,6 +3,33 @@
 // message is a set of headers followed by a body.
 
 module Obex {
+  export function dumpDataView(data: DataView) {
+    var msg;
+    console.log(
+      "DataView: buffer length=" + data.buffer.byteLength + ", " +
+      "view offset=" + data.byteOffset + ", " +
+      "view length=" + data.byteLength);
+
+    var txt = "";
+    for (var i = 0; i < data.byteLength; i++) {
+      if (i > 0 && (i % 32) == 0)
+        txt += "\n";
+      else if (i > 0)
+        txt += " ";
+
+      var hex = data.getUint8(i).toString(16);
+      if (hex.length == 1)
+        hex = "0" + hex;
+      txt += "0x" + hex;
+    }
+
+    console.log("Data: " + txt);
+  }
+
+  export function dumpArrayBuffer(buffer: ArrayBuffer) {
+    dumpDataView(new DataView(buffer));
+  }
+
   // Simple growable buffer
   export class GrowableBuffer {
     private _bytes = new DataView(new ArrayBuffer(8));
@@ -159,6 +186,7 @@ module Obex {
     public static Body = new HeaderIdentifier(0x48);
     public static EndOfBody = new HeaderIdentifier(0x49);
     public static ConnectionId = new HeaderIdentifier(0xcf);
+    public static Description = new HeaderIdentifier(0x05);
   }
 
   export class HeaderValue {
@@ -192,7 +220,7 @@ module Obex {
       return this._byteSequence;
     }
 
-    public setInt8(value: number): void {
+    public setUint8(value: number): void {
       if (value < 0 || value > 255)
         throw new Error("Value must be smaller than 256.");
       if (this._kind != HeaderValueKind.Int8)
@@ -200,7 +228,7 @@ module Obex {
       this._intValue = value;
     }
 
-    public setInt32(value: number): void {
+    public setUint32(value: number): void {
       if (value < 0 || value > 0xffffffff)
         throw new Error("Value must be smaller than 2^32.");
       if (this._kind != HeaderValueKind.Int32)
@@ -231,13 +259,26 @@ module Obex {
         stream.addUint16((this._intValue & 0xffff0000) >>> 16);
         stream.addUint16((this._intValue & 0x0000ffff));
       } else if (this._kind === HeaderValueKind.Unicode) {
-        stream.addUint16(this._stringValue.length);
-        for (var i = 0; i < this._stringValue.length; i++) {
-          var c = this._stringValue.charCodeAt(i);
-          stream.addUint16(c);
+        // Special case for empty string.
+        if (this._stringValue.length === 0) {
+          // HI + 2-byte length
+          var length = 1 + 2;
+          stream.addUint16(length);
+        }
+        else {
+          // HI + 2-byte length + (string length + null terminator) * sizeof(wchar_t)
+          var length = 1 + 2 + (this._stringValue.length + 1) * 2;
+          stream.addUint16(length);
+          for (var i = 0; i < this._stringValue.length; i++) {
+            var c = this._stringValue.charCodeAt(i);
+            stream.addUint16(c);
+          }
+          stream.addUint16(0); // NULL terminator
         }
       } else if (this._kind === HeaderValueKind.ByteSequence) {
-        stream.addUint16(this._byteSequence.byteLength);
+        // HI + 2-byte length + byte sequence length
+        var length = 1 + 2 + this._byteSequence.byteLength;
+        stream.addUint16(length);
         stream.addData(this._byteSequence);
       } else {
         throw new Error("Invalid value type.");
@@ -319,37 +360,197 @@ module Obex {
     }
   }
 
-  export interface RequestBuilder {
-    opCode: RequestOpCode;
-    headerList: HeaderList;
-    serialize(stream: ByteStream): void;
+
+  export class HeaderListParser {
+    private _littleEndian = false;
+    private _data: DataView;
+    private _offset = 0;
+
+    public constructor(data: DataView) {
+      this._data = data;
+    }
+
+    private fetchUint8(): number {
+      var result = this._data.getUint8(this._offset);
+      this._offset++;
+      return result;
+    }
+
+    private fetchUint16(): number {
+      var result = this._data.getUint16(this._offset, this._littleEndian);
+      this._offset += 2;
+      return result;
+    }
+
+    private fetchUint32(): number {
+      var result = this._data.getUint32(this._offset, this._littleEndian);
+      this._offset += 4;
+      return result;
+    }
+
+    public parse(): HeaderList {
+      var list = new HeaderList();
+      while (this._offset < this._data.byteLength) {
+        var op_code = this.fetchUint8();
+        var id = new HeaderIdentifier(op_code);
+        switch (id.valueKind) {
+          case HeaderValueKind.Int8:
+            var value = this.parseInt8();
+            list.add(id).value.setUint8(value);
+            break;
+          case HeaderValueKind.Int32:
+            var value = this.parseInt32();
+            list.add(id).value.setUint32(value);
+            break;
+          case HeaderValueKind.Unicode:
+            var text = this.parseUnicodeString();
+            list.add(id).value.setUnicode(text);
+            break;
+          case HeaderValueKind.ByteSequence:
+            var view = this.parseByteSequence();
+            list.add(id).value.setByteSequence(view);
+            break;
+          default:
+            throw new Error("Unsupported value kind.");
+        }
+      }
+      return list;
+    }
+
+    private parseInt8(): number {
+      return this.fetchUint8();
+    }
+
+    private parseInt32(): number {
+      return this.fetchUint32();
+    }
+
+    private parseUnicodeString(): string {
+      var length = this.fetchUint16();
+      if ((length < 3) || (length % 2 ) == 0)
+        throw new Error("Invalid unicode string format");
+      var result = "";
+      // Empty string have a special length == 3
+      if (length > 3) {
+        var charCount = Math.floor((length - 5) / 2);
+        for (var i = 0; i < charCount; i++) {
+          var ch = this.fetchUint16();
+          result += String.fromCharCode(ch);
+        }
+        var terminator = this.fetchUint16();
+        if (terminator != 0)
+          throw new Error("Invalid unicode string format (not null terminated)");
+      }
+      return result;
+    }
+
+    private parseByteSequence(): Uint8Array {
+      var length = this.fetchUint16();
+      if (length < 3)
+        throw new Error("Invalid byte sequence format");
+      var byteLength = length - 3;
+      var result = new Uint8Array(this._data.buffer, this._data.byteOffset + this._offset, byteLength);
+      this._offset += byteLength;
+      return result;
+    }
   }
 
-  export class ConnectRequestBuilder implements RequestBuilder {
-    private _headers = new HeaderListBuilder();
-    private _maxPacketSize = 255;
+  export class RequestBuilder {
+    private _opCode: RequestOpCode;
+    private _headerList = new HeaderListBuilder();
 
-    public get opCode(): RequestOpCode { return RequestOpCode.Connect; }
-    public get obexVersion(): number { return 0x10; }
-    public get flags(): number { return 0x00; }
-    public get maxPacketSize(): number { return this._maxPacketSize; }
-    public set maxPacketSize(value: number) { this._maxPacketSize = value; }
-    public get headerList(): HeaderList { return this._headers.headerList; }
-    public get count(): number { return this._headers.headerList.add(Obex.HeaderIdentifiers.Count).value.asInt; }
-    public set count(value: number) { this._headers.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(value); }
-    public get length(): number { return this._headers.headerList.add(Obex.HeaderIdentifiers.Length).value.asInt; }
-    public set length(value: number) { this._headers.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(value); }
+    public get opCode(): RequestOpCode { return this._opCode; }
+    public set opCode(value: RequestOpCode) { this._opCode = value; }
+
+    public get headers(): HeaderListBuilder { return this._headerList; }
+    public get headerList(): HeaderList { return this._headerList.headerList; }
 
     public serialize(stream: ByteStream): void {
       stream.addUint8(this.opCode);
       var lengthOffset = stream.length;
       stream.addUint16(0); // request length unknown at this time
+
+      this.serializeCustomData(stream);
+      this.serializeHeaders(stream);
+
+      stream.setUint16(lengthOffset, stream.length);
+    }
+
+    // Implement in derived classes.
+    public serializeCustomData(stream: ByteStream): void {
+    }
+
+    private serializeHeaders(stream: ByteStream): void {
+      this._headerList.serialize(stream);
+    }
+  }
+
+  export class ConnectRequestBuilder extends RequestBuilder {
+    private _maxPacketSize = 255;
+
+    public constructor() {
+      super();
+      this.opCode = RequestOpCode.Connect;
+    }
+
+    public get obexVersion(): number { return 0x10; }
+
+    public get flags(): number { return 0x00; }
+
+    public get maxPacketSize(): number { return this._maxPacketSize; }
+    public set maxPacketSize(value: number) { this._maxPacketSize = value; }
+
+    public get count(): number { return this.headerList.add(Obex.HeaderIdentifiers.Count).value.asInt; }
+    public set count(value: number) { this.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(value); }
+
+    public get length(): number { return this.headerList.add(Obex.HeaderIdentifiers.Length).value.asInt; }
+    public set length(value: number) { this.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(value); }
+
+    public serializeCustomData(stream: ByteStream): void {
       stream.addUint8(this.obexVersion);
       stream.addUint8(this.flags);
       stream.addUint16(this.maxPacketSize);
-      this.headerList.serialize(stream);
-      stream.setUint16(lengthOffset, stream.length);
     }
+  }
+
+  export class DisconnectRequestBuilder extends RequestBuilder {
+    public constructor() {
+      super();
+      this.opCode = RequestOpCode.Disconnect;
+    }
+  }
+
+  export class PutRequestBuilder extends RequestBuilder {
+    public constructor() {
+      super();
+      this.opCode = RequestOpCode.Put;
+    }
+
+    public get isFinal(): boolean { return (this.opCode & 0x80) !== 0; }
+    public set isFinal(value: boolean) {
+      if (value)
+        this.opCode = this.opCode | 0x80;
+      else
+        this.opCode = this.opCode & ~0x80;
+    }
+
+    public get name(): string { return this.headerList.add(Obex.HeaderIdentifiers.Name).value.asString; }
+    public set name(value: string) { this.headerList.add(Obex.HeaderIdentifiers.Name).value.setUnicode(value); }
+
+    public get length(): number { return this.headerList.add(Obex.HeaderIdentifiers.Length).value.asInt; }
+    public set length(value: number) { this.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(value); }
+
+    public get description(): string { return this.headerList.add(Obex.HeaderIdentifiers.Description).value.asString; }
+    public set description(value: string) { this.headerList.add(Obex.HeaderIdentifiers.Description).value.setUnicode(value); }
+
+    public get type(): Uint8Array { return this.headerList.add(Obex.HeaderIdentifiers.Type).value.asUint8Array; }
+    public set type(value: Uint8Array) { this.headerList.add(Obex.HeaderIdentifiers.Type).value.setByteSequence(value); }
+
+    public get body(): Uint8Array { return this.headerList.add(Obex.HeaderIdentifiers.Body).value.asUint8Array; }
+    public set body(value: Uint8Array) { this.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(value); }
+
+    public get endOfbody(): Uint8Array { return this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.asUint8Array; }
+    public set endOfbody(value: Uint8Array) { this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.setByteSequence(value); }
   }
 
   export enum ResponseCode {
@@ -420,67 +621,25 @@ module Obex {
     }
   }
 
-  export class HeaderListParser {
-    private _littleEndian = false;
-    private _data: DataView;
-    private _offset = 0;
-
-    public constructor(data: DataView) {
-      this._data = data;
+  export class ConnectResponse {
+    private _headerList: HeaderList = null;
+    public constructor(private _response: Response) {
     }
 
-    private fetchUint8(): number {
-      var result = this._data.getUint8(this._offset);
-      this._offset++;
-      return result;
-    }
-
-    private fetchUint16(): number {
-      var result = this._data.getUint16(this._offset, this._littleEndian);
-      this._offset += 2;
-      return result;
-    }
-
-    private fetchUint32(): number {
-      var result = this._data.getUint32(this._offset, this._littleEndian);
-      this._offset += 4;
-      return result;
-    }
-
-    public parse(): HeaderList {
-      var list = new HeaderList();
-      while (this._offset < this._data.byteLength) {
-        var op_code = this.fetchUint8();
-        var id = new HeaderIdentifier(op_code);
-        switch (id.valueKind) {
-          case HeaderValueKind.Int8:
-            var value = this.fetchUint8();
-            list.add(id).value.setInt8(value);
-            break;
-          case HeaderValueKind.Int32:
-            var value = this.fetchUint32();
-            list.add(id).value.setInt32(value);
-            break;
-          case HeaderValueKind.Unicode:
-            var length = this.fetchUint16();
-            var text = "";
-            for (var i = 0; i < length; i++) {
-              var ch = this.fetchUint16();
-              text += String.fromCharCode(ch);
-            }
-            list.add(id).value.setUnicode(text);
-            break;
-          case HeaderValueKind.ByteSequence:
-            var length = this.fetchUint16();
-            var view = new Uint8Array(this._data.buffer, this._data.byteOffset + this._offset, length);
-            this._offset += length;
-            list.add(id).value.setByteSequence(view);
-            break;
-          default:
-            throw new Error("Unsupported value kind.");
-        }
+    public get code(): ResponseCode { return this._response.code; }
+    public get obexVersion(): number { return this._response.data.getUint8(0); }
+    public get flags(): number { return this._response.data.getUint8(1); }
+    public get maxPacketSize(): number { return this._response.data.getUint16(2); }
+    public get headerList(): HeaderList {
+      if (this._headerList === null) {
+        var view = new DataView(
+          this._response.data.buffer,
+          this._response.data.byteOffset + 4,
+          this._response.data.byteLength - 4);
+        var parser = new HeaderListParser(view);
+        this._headerList = parser.parse();
       }
-      return list;
+      return this._headerList;
     }
   }
 }

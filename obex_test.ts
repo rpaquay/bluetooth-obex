@@ -116,7 +116,7 @@ module ObexTests {
   Tests.run("Encoder2", () => {
     // Prepare
     var encoder = new Obex.HeaderListBuilder();
-    encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(1);
+    encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(1);
 
     // Act
     var stream = new Obex.ByteStream();
@@ -132,11 +132,11 @@ module ObexTests {
     // Prepare
     var encoder = new Obex.HeaderListBuilder();
     // 1 + 4 bytes
-    encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(1);
-    // 1 + 2 + 2 * 4 bytes
+    encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(1);
+    // 1 + 2 + 4 * 2 bytes + 1 * 2 bytes(null)
     encoder.headerList.add(Obex.HeaderIdentifiers.Name).value.setUnicode("toto");
     // 1 + 4 bytes
-    encoder.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(245);
+    encoder.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(245);
     // 1 + 2 + 100 bytes
     encoder.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(new Uint8Array(100));
 
@@ -147,15 +147,15 @@ module ObexTests {
 
     // Assert
     Assert.isNotNull(buffer);
-    Assert.isEqual(124, buffer.byteLength);
+    Assert.isEqual(126, buffer.byteLength);
   });
 
   Tests.run("ConnectRequestBuilder", () => {
     // Prepare
     var request = new Obex.ConnectRequestBuilder();
     request.maxPacketSize = 8 * 1024;
-    request.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(4);
-    request.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(0xf483);
+    request.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(4);
+    request.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(0xf483);
 
     // Act
     var stream = new Obex.ByteStream();
@@ -241,8 +241,8 @@ module ObexTests {
   Tests.run("HeaderParser", () => {
     // Prepare
     var builder = new Obex.HeaderListBuilder();
-    builder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(4);
-    builder.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(10);
+    builder.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(4);
+    builder.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(10);
     builder.headerList.add(Obex.HeaderIdentifiers.Name).value.setUnicode("hello");
     var buffer = new ArrayBuffer(150);
     var view = new Uint8Array(buffer, 10, 100);

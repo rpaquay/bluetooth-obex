@@ -1,8 +1,40 @@
 // Obex component: Obex is a transport protocol conceptually similar to HTTP.
 // It is a request/response message protocol where each request/response
 // message is a set of headers followed by a body.
+var __extends = this.__extends || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    __.prototype = b.prototype;
+    d.prototype = new __();
+};
 var Obex;
 (function (Obex) {
+    function dumpDataView(data) {
+        var msg;
+        console.log("DataView: buffer length=" + data.buffer.byteLength + ", " + "view offset=" + data.byteOffset + ", " + "view length=" + data.byteLength);
+
+        var txt = "";
+        for (var i = 0; i < data.byteLength; i++) {
+            if (i > 0 && (i % 32) == 0)
+                txt += "\n";
+            else if (i > 0)
+                txt += " ";
+
+            var hex = data.getUint8(i).toString(16);
+            if (hex.length == 1)
+                hex = "0" + hex;
+            txt += "0x" + hex;
+        }
+
+        console.log("Data: " + txt);
+    }
+    Obex.dumpDataView = dumpDataView;
+
+    function dumpArrayBuffer(buffer) {
+        dumpDataView(new DataView(buffer));
+    }
+    Obex.dumpArrayBuffer = dumpArrayBuffer;
+
     // Simple growable buffer
     var GrowableBuffer = (function () {
         function GrowableBuffer() {
@@ -214,6 +246,7 @@ var Obex;
         HeaderIdentifiers.Body = new HeaderIdentifier(0x48);
         HeaderIdentifiers.EndOfBody = new HeaderIdentifier(0x49);
         HeaderIdentifiers.ConnectionId = new HeaderIdentifier(0xcf);
+        HeaderIdentifiers.Description = new HeaderIdentifier(0x05);
         return HeaderIdentifiers;
     })();
     Obex.HeaderIdentifiers = HeaderIdentifiers;
@@ -255,7 +288,7 @@ var Obex;
             configurable: true
         });
 
-        HeaderValue.prototype.setInt8 = function (value) {
+        HeaderValue.prototype.setUint8 = function (value) {
             if (value < 0 || value > 255)
                 throw new Error("Value must be smaller than 256.");
             if (this._kind != 128 /* Int8 */)
@@ -263,7 +296,7 @@ var Obex;
             this._intValue = value;
         };
 
-        HeaderValue.prototype.setInt32 = function (value) {
+        HeaderValue.prototype.setUint32 = function (value) {
             if (value < 0 || value > 0xffffffff)
                 throw new Error("Value must be smaller than 2^32.");
             if (this._kind != 192 /* Int32 */)
@@ -294,13 +327,25 @@ var Obex;
                 stream.addUint16((this._intValue & 0xffff0000) >>> 16);
                 stream.addUint16((this._intValue & 0x0000ffff));
             } else if (this._kind === 0 /* Unicode */) {
-                stream.addUint16(this._stringValue.length);
-                for (var i = 0; i < this._stringValue.length; i++) {
-                    var c = this._stringValue.charCodeAt(i);
-                    stream.addUint16(c);
+                // Special case for empty string.
+                if (this._stringValue.length === 0) {
+                    // HI + 2-byte length
+                    var length = 1 + 2;
+                    stream.addUint16(length);
+                } else {
+                    // HI + 2-byte length + (string length + null terminator) * sizeof(wchar_t)
+                    var length = 1 + 2 + (this._stringValue.length + 1) * 2;
+                    stream.addUint16(length);
+                    for (var i = 0; i < this._stringValue.length; i++) {
+                        var c = this._stringValue.charCodeAt(i);
+                        stream.addUint16(c);
+                    }
+                    stream.addUint16(0); // NULL terminator
                 }
             } else if (this._kind === 64 /* ByteSequence */) {
-                stream.addUint16(this._byteSequence.byteLength);
+                // HI + 2-byte length + byte sequence length
+                var length = 1 + 2 + this._byteSequence.byteLength;
+                stream.addUint16(length);
                 stream.addData(this._byteSequence);
             } else {
                 throw new Error("Invalid value type.");
@@ -413,18 +458,159 @@ var Obex;
     })();
     Obex.HeaderListBuilder = HeaderListBuilder;
 
-    var ConnectRequestBuilder = (function () {
-        function ConnectRequestBuilder() {
-            this._headers = new HeaderListBuilder();
-            this._maxPacketSize = 255;
+    var HeaderListParser = (function () {
+        function HeaderListParser(data) {
+            this._littleEndian = false;
+            this._offset = 0;
+            this._data = data;
         }
-        Object.defineProperty(ConnectRequestBuilder.prototype, "opCode", {
+        HeaderListParser.prototype.fetchUint8 = function () {
+            var result = this._data.getUint8(this._offset);
+            this._offset++;
+            return result;
+        };
+
+        HeaderListParser.prototype.fetchUint16 = function () {
+            var result = this._data.getUint16(this._offset, this._littleEndian);
+            this._offset += 2;
+            return result;
+        };
+
+        HeaderListParser.prototype.fetchUint32 = function () {
+            var result = this._data.getUint32(this._offset, this._littleEndian);
+            this._offset += 4;
+            return result;
+        };
+
+        HeaderListParser.prototype.parse = function () {
+            var list = new HeaderList();
+            while (this._offset < this._data.byteLength) {
+                var op_code = this.fetchUint8();
+                var id = new HeaderIdentifier(op_code);
+                switch (id.valueKind) {
+                    case 128 /* Int8 */:
+                        var value = this.parseInt8();
+                        list.add(id).value.setUint8(value);
+                        break;
+                    case 192 /* Int32 */:
+                        var value = this.parseInt32();
+                        list.add(id).value.setUint32(value);
+                        break;
+                    case 0 /* Unicode */:
+                        var text = this.parseUnicodeString();
+                        list.add(id).value.setUnicode(text);
+                        break;
+                    case 64 /* ByteSequence */:
+                        var view = this.parseByteSequence();
+                        list.add(id).value.setByteSequence(view);
+                        break;
+                    default:
+                        throw new Error("Unsupported value kind.");
+                }
+            }
+            return list;
+        };
+
+        HeaderListParser.prototype.parseInt8 = function () {
+            return this.fetchUint8();
+        };
+
+        HeaderListParser.prototype.parseInt32 = function () {
+            return this.fetchUint32();
+        };
+
+        HeaderListParser.prototype.parseUnicodeString = function () {
+            var length = this.fetchUint16();
+            if ((length < 3) || (length % 2) == 0)
+                throw new Error("Invalid unicode string format");
+            var result = "";
+
+            // Empty string have a special length == 3
+            if (length > 3) {
+                var charCount = Math.floor((length - 5) / 2);
+                for (var i = 0; i < charCount; i++) {
+                    var ch = this.fetchUint16();
+                    result += String.fromCharCode(ch);
+                }
+                var terminator = this.fetchUint16();
+                if (terminator != 0)
+                    throw new Error("Invalid unicode string format (not null terminated)");
+            }
+            return result;
+        };
+
+        HeaderListParser.prototype.parseByteSequence = function () {
+            var length = this.fetchUint16();
+            if (length < 3)
+                throw new Error("Invalid byte sequence format");
+            var byteLength = length - 3;
+            var result = new Uint8Array(this._data.buffer, this._data.byteOffset + this._offset, byteLength);
+            this._offset += byteLength;
+            return result;
+        };
+        return HeaderListParser;
+    })();
+    Obex.HeaderListParser = HeaderListParser;
+
+    var RequestBuilder = (function () {
+        function RequestBuilder() {
+            this._headerList = new HeaderListBuilder();
+        }
+        Object.defineProperty(RequestBuilder.prototype, "opCode", {
             get: function () {
-                return 128 /* Connect */;
+                return this._opCode;
+            },
+            set: function (value) {
+                this._opCode = value;
             },
             enumerable: true,
             configurable: true
         });
+
+        Object.defineProperty(RequestBuilder.prototype, "headers", {
+            get: function () {
+                return this._headerList;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(RequestBuilder.prototype, "headerList", {
+            get: function () {
+                return this._headerList.headerList;
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        RequestBuilder.prototype.serialize = function (stream) {
+            stream.addUint8(this.opCode);
+            var lengthOffset = stream.length;
+            stream.addUint16(0); // request length unknown at this time
+
+            this.serializeCustomData(stream);
+            this.serializeHeaders(stream);
+
+            stream.setUint16(lengthOffset, stream.length);
+        };
+
+        // Implement in derived classes.
+        RequestBuilder.prototype.serializeCustomData = function (stream) {
+        };
+
+        RequestBuilder.prototype.serializeHeaders = function (stream) {
+            this._headerList.serialize(stream);
+        };
+        return RequestBuilder;
+    })();
+    Obex.RequestBuilder = RequestBuilder;
+
+    var ConnectRequestBuilder = (function (_super) {
+        __extends(ConnectRequestBuilder, _super);
+        function ConnectRequestBuilder() {
+            _super.call(this);
+            this._maxPacketSize = 255;
+            this.opCode = 128 /* Connect */;
+        }
         Object.defineProperty(ConnectRequestBuilder.prototype, "obexVersion", {
             get: function () {
                 return 0x10;
@@ -432,6 +618,7 @@ var Obex;
             enumerable: true,
             configurable: true
         });
+
         Object.defineProperty(ConnectRequestBuilder.prototype, "flags", {
             get: function () {
                 return 0x00;
@@ -439,6 +626,7 @@ var Obex;
             enumerable: true,
             configurable: true
         });
+
         Object.defineProperty(ConnectRequestBuilder.prototype, "maxPacketSize", {
             get: function () {
                 return this._maxPacketSize;
@@ -449,47 +637,136 @@ var Obex;
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(ConnectRequestBuilder.prototype, "headerList", {
-            get: function () {
-                return this._headers.headerList;
-            },
-            enumerable: true,
-            configurable: true
-        });
+
         Object.defineProperty(ConnectRequestBuilder.prototype, "count", {
             get: function () {
-                return this._headers.headerList.add(Obex.HeaderIdentifiers.Count).value.asInt;
+                return this.headerList.add(Obex.HeaderIdentifiers.Count).value.asInt;
             },
             set: function (value) {
-                this._headers.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(value);
-            },
-            enumerable: true,
-            configurable: true
-        });
-        Object.defineProperty(ConnectRequestBuilder.prototype, "length", {
-            get: function () {
-                return this._headers.headerList.add(Obex.HeaderIdentifiers.Length).value.asInt;
-            },
-            set: function (value) {
-                this._headers.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(value);
+                this.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(value);
             },
             enumerable: true,
             configurable: true
         });
 
-        ConnectRequestBuilder.prototype.serialize = function (stream) {
-            stream.addUint8(this.opCode);
-            var lengthOffset = stream.length;
-            stream.addUint16(0); // request length unknown at this time
+        Object.defineProperty(ConnectRequestBuilder.prototype, "length", {
+            get: function () {
+                return this.headerList.add(Obex.HeaderIdentifiers.Length).value.asInt;
+            },
+            set: function (value) {
+                this.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(value);
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        ConnectRequestBuilder.prototype.serializeCustomData = function (stream) {
             stream.addUint8(this.obexVersion);
             stream.addUint8(this.flags);
             stream.addUint16(this.maxPacketSize);
-            this.headerList.serialize(stream);
-            stream.setUint16(lengthOffset, stream.length);
         };
         return ConnectRequestBuilder;
-    })();
+    })(RequestBuilder);
     Obex.ConnectRequestBuilder = ConnectRequestBuilder;
+
+    var DisconnectRequestBuilder = (function (_super) {
+        __extends(DisconnectRequestBuilder, _super);
+        function DisconnectRequestBuilder() {
+            _super.call(this);
+            this.opCode = 129 /* Disconnect */;
+        }
+        return DisconnectRequestBuilder;
+    })(RequestBuilder);
+    Obex.DisconnectRequestBuilder = DisconnectRequestBuilder;
+
+    var PutRequestBuilder = (function (_super) {
+        __extends(PutRequestBuilder, _super);
+        function PutRequestBuilder() {
+            _super.call(this);
+            this.opCode = 2 /* Put */;
+        }
+        Object.defineProperty(PutRequestBuilder.prototype, "isFinal", {
+            get: function () {
+                return (this.opCode & 0x80) !== 0;
+            },
+            set: function (value) {
+                if (value)
+                    this.opCode = this.opCode | 0x80;
+                else
+                    this.opCode = this.opCode & ~0x80;
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        Object.defineProperty(PutRequestBuilder.prototype, "name", {
+            get: function () {
+                return this.headerList.add(Obex.HeaderIdentifiers.Name).value.asString;
+            },
+            set: function (value) {
+                this.headerList.add(Obex.HeaderIdentifiers.Name).value.setUnicode(value);
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        Object.defineProperty(PutRequestBuilder.prototype, "length", {
+            get: function () {
+                return this.headerList.add(Obex.HeaderIdentifiers.Length).value.asInt;
+            },
+            set: function (value) {
+                this.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(value);
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        Object.defineProperty(PutRequestBuilder.prototype, "description", {
+            get: function () {
+                return this.headerList.add(Obex.HeaderIdentifiers.Description).value.asString;
+            },
+            set: function (value) {
+                this.headerList.add(Obex.HeaderIdentifiers.Description).value.setUnicode(value);
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        Object.defineProperty(PutRequestBuilder.prototype, "type", {
+            get: function () {
+                return this.headerList.add(Obex.HeaderIdentifiers.Type).value.asUint8Array;
+            },
+            set: function (value) {
+                this.headerList.add(Obex.HeaderIdentifiers.Type).value.setByteSequence(value);
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        Object.defineProperty(PutRequestBuilder.prototype, "body", {
+            get: function () {
+                return this.headerList.add(Obex.HeaderIdentifiers.Body).value.asUint8Array;
+            },
+            set: function (value) {
+                this.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(value);
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        Object.defineProperty(PutRequestBuilder.prototype, "endOfbody", {
+            get: function () {
+                return this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.asUint8Array;
+            },
+            set: function (value) {
+                this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.setByteSequence(value);
+            },
+            enumerable: true,
+            configurable: true
+        });
+        return PutRequestBuilder;
+    })(RequestBuilder);
+    Obex.PutRequestBuilder = PutRequestBuilder;
 
     (function (ResponseCode) {
         ResponseCode[ResponseCode["Reserved"] = 0x00] = "Reserved";
@@ -591,68 +868,54 @@ var Obex;
     })();
     Obex.ResponseParser = ResponseParser;
 
-    var HeaderListParser = (function () {
-        function HeaderListParser(data) {
-            this._littleEndian = false;
-            this._offset = 0;
-            this._data = data;
+    var ConnectResponse = (function () {
+        function ConnectResponse(_response) {
+            this._response = _response;
+            this._headerList = null;
         }
-        HeaderListParser.prototype.fetchUint8 = function () {
-            var result = this._data.getUint8(this._offset);
-            this._offset++;
-            return result;
-        };
-
-        HeaderListParser.prototype.fetchUint16 = function () {
-            var result = this._data.getUint16(this._offset, this._littleEndian);
-            this._offset += 2;
-            return result;
-        };
-
-        HeaderListParser.prototype.fetchUint32 = function () {
-            var result = this._data.getUint32(this._offset, this._littleEndian);
-            this._offset += 4;
-            return result;
-        };
-
-        HeaderListParser.prototype.parse = function () {
-            var list = new HeaderList();
-            while (this._offset < this._data.byteLength) {
-                var op_code = this.fetchUint8();
-                var id = new HeaderIdentifier(op_code);
-                switch (id.valueKind) {
-                    case 128 /* Int8 */:
-                        var value = this.fetchUint8();
-                        list.add(id).value.setInt8(value);
-                        break;
-                    case 192 /* Int32 */:
-                        var value = this.fetchUint32();
-                        list.add(id).value.setInt32(value);
-                        break;
-                    case 0 /* Unicode */:
-                        var length = this.fetchUint16();
-                        var text = "";
-                        for (var i = 0; i < length; i++) {
-                            var ch = this.fetchUint16();
-                            text += String.fromCharCode(ch);
-                        }
-                        list.add(id).value.setUnicode(text);
-                        break;
-                    case 64 /* ByteSequence */:
-                        var length = this.fetchUint16();
-                        var view = new Uint8Array(this._data.buffer, this._data.byteOffset + this._offset, length);
-                        this._offset += length;
-                        list.add(id).value.setByteSequence(view);
-                        break;
-                    default:
-                        throw new Error("Unsupported value kind.");
+        Object.defineProperty(ConnectResponse.prototype, "code", {
+            get: function () {
+                return this._response.code;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(ConnectResponse.prototype, "obexVersion", {
+            get: function () {
+                return this._response.data.getUint8(0);
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(ConnectResponse.prototype, "flags", {
+            get: function () {
+                return this._response.data.getUint8(1);
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(ConnectResponse.prototype, "maxPacketSize", {
+            get: function () {
+                return this._response.data.getUint16(2);
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(ConnectResponse.prototype, "headerList", {
+            get: function () {
+                if (this._headerList === null) {
+                    var view = new DataView(this._response.data.buffer, this._response.data.byteOffset + 4, this._response.data.byteLength - 4);
+                    var parser = new HeaderListParser(view);
+                    this._headerList = parser.parse();
                 }
-            }
-            return list;
-        };
-        return HeaderListParser;
+                return this._headerList;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        return ConnectResponse;
     })();
-    Obex.HeaderListParser = HeaderListParser;
+    Obex.ConnectResponse = ConnectResponse;
 })(Obex || (Obex = {}));
 /// <reference path="obex.ts"/>
 var Assert;
@@ -779,7 +1042,7 @@ var ObexTests;
     Tests.run("Encoder2", function () {
         // Prepare
         var encoder = new Obex.HeaderListBuilder();
-        encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(1);
+        encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(1);
 
         // Act
         var stream = new Obex.ByteStream();
@@ -796,13 +1059,13 @@ var ObexTests;
         var encoder = new Obex.HeaderListBuilder();
 
         // 1 + 4 bytes
-        encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(1);
+        encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(1);
 
-        // 1 + 2 + 2 * 4 bytes
+        // 1 + 2 + 4 * 2 bytes + 1 * 2 bytes(null)
         encoder.headerList.add(Obex.HeaderIdentifiers.Name).value.setUnicode("toto");
 
         // 1 + 4 bytes
-        encoder.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(245);
+        encoder.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(245);
 
         // 1 + 2 + 100 bytes
         encoder.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(new Uint8Array(100));
@@ -814,15 +1077,15 @@ var ObexTests;
 
         // Assert
         Assert.isNotNull(buffer);
-        Assert.isEqual(124, buffer.byteLength);
+        Assert.isEqual(126, buffer.byteLength);
     });
 
     Tests.run("ConnectRequestBuilder", function () {
         // Prepare
         var request = new Obex.ConnectRequestBuilder();
         request.maxPacketSize = 8 * 1024;
-        request.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(4);
-        request.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(0xf483);
+        request.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(4);
+        request.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(0xf483);
 
         // Act
         var stream = new Obex.ByteStream();
@@ -908,8 +1171,8 @@ var ObexTests;
     Tests.run("HeaderParser", function () {
         // Prepare
         var builder = new Obex.HeaderListBuilder();
-        builder.headerList.add(Obex.HeaderIdentifiers.Count).value.setInt32(4);
-        builder.headerList.add(Obex.HeaderIdentifiers.Length).value.setInt32(10);
+        builder.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(4);
+        builder.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(10);
         builder.headerList.add(Obex.HeaderIdentifiers.Name).value.setUnicode("hello");
         var buffer = new ArrayBuffer(150);
         var view = new Uint8Array(buffer, 10, 100);

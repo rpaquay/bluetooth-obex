@@ -64,33 +64,138 @@ function GetDeviceServicesClick(device) {
     });
 }
 
+function readPoll(socket, callback) {
+    chrome.bluetooth.read({ socket: socket }, function (result) {
+        if (chrome.runtime.lastError) {
+            log("Error reading packet from peer: " + chrome.runtime.lastError.message);
+            return;
+        }
+
+        if (result.byteLength === 0) {
+            console.log("Nothing received from peer. Polling again in 1000 ms.");
+            window.setTimeout(function () {
+                return readPoll(socket, callback);
+            }, 1000);
+            return;
+        }
+
+        console.log("Received packet from peer.");
+        Obex.dumpArrayBuffer(result);
+        callback(result);
+    });
+}
+
+function sendPutRequest(socket) {
+    var builder = new Obex.PutRequestBuilder();
+
+    //builder.isFinal = false;
+    ////builder.name = "hello.txt";
+    //builder.length = 100;
+    ////builder.body = new Uint8Array(100);
+    builder.isFinal = true;
+    builder.length = 3;
+    builder.name = "hello.txt";
+    builder.body = new Uint8Array(3);
+    var view = new DataView(builder.body.buffer);
+    view.setUint8(0, 'a'.charCodeAt(0));
+    view.setUint8(1, 'a'.charCodeAt(0));
+    view.setUint8(2, 'c'.charCodeAt(0));
+
+    var stream = new Obex.ByteStream();
+    builder.serialize(stream);
+    var buffer = stream.toArrayBuffer();
+    Obex.dumpArrayBuffer(buffer);
+
+    chrome.bluetooth.write({ socket: socket, data: buffer }, function (result) {
+        if (chrome.runtime.lastError) {
+            log("Error sending packet to peer: " + chrome.runtime.lastError.message);
+            return;
+        }
+        console.log("PUT packet send to peer (byte length=" + result + ").");
+
+        readPoll(socket, function (result) {
+            var parser = new Obex.ResponseParser();
+            parser.setHandler(function (response) {
+                console.log("response.code=" + response.code);
+                console.log("response.isFinal=" + response.isFinal);
+
+                var headers = new Obex.HeaderListParser(response.data).parse();
+                console.log(headers);
+            });
+            parser.addData(new Uint8Array(result));
+        });
+    });
+}
+
+function sendConnectRequest(socket, callback) {
+    var builder = new Obex.ConnectRequestBuilder();
+    builder.count = 1;
+    builder.length = 100;
+
+    var stream = new Obex.ByteStream();
+    builder.serialize(stream);
+    var buffer = stream.toArrayBuffer();
+    Obex.dumpArrayBuffer(buffer);
+
+    chrome.bluetooth.write({ socket: socket, data: buffer }, function (result) {
+        if (chrome.runtime.lastError) {
+            log("Error sending packet to peer: " + chrome.runtime.lastError.message);
+            return;
+        }
+        console.log("CONNECT packet send to peer (result code=" + result + ").");
+
+        readPoll(socket, function (result) {
+            var parser = new Obex.ResponseParser();
+            parser.setHandler(function (response) {
+                console.log("response.code=" + response.code);
+                console.log("response.isFinal=" + response.isFinal);
+                var connectResponse = new Obex.ConnectResponse(response);
+
+                console.log(connectResponse);
+                callback(socket, connectResponse);
+            });
+            parser.addData(new Uint8Array(result));
+        });
+    });
+}
+
+function sendDisconnectRequest(socket, response) {
+    var builder = new Obex.DisconnectRequestBuilder();
+
+    var stream = new Obex.ByteStream();
+    builder.serialize(stream);
+    var buffer = stream.toArrayBuffer();
+    Obex.dumpArrayBuffer(buffer);
+
+    chrome.bluetooth.write({ socket: socket, data: buffer }, function (result) {
+        if (chrome.runtime.lastError) {
+            log("Error sending packet to peer: " + chrome.runtime.lastError.message);
+            return;
+        }
+        console.log("DISCONNECT packet send to peer (result code=" + result + ").");
+
+        readPoll(socket, function (result) {
+            var parser = new Obex.ResponseParser();
+            parser.setHandler(function (response) {
+                console.log("response.code=" + response.code);
+                console.log("response.isFinal=" + response.isFinal);
+                console.log(response);
+            });
+            parser.addData(new Uint8Array(result));
+        });
+    });
+}
+
 function ObjectPushClick(device) {
     var uuid = kOBEXObjectPush.toLowerCase();
     var profile = { uuid: uuid };
 
-    connectCallback[uuid] = function (socket) {
-        var builder = new Obex.ConnectRequestBuilder();
-        builder.count = 1;
-        builder.length = 100;
-        var stream = new Obex.ByteStream();
-        builder.serialize(stream);
-        var buffer = stream.toArrayBuffer();
-        chrome.bluetooth.write({ socket: socket, data: buffer }, function (result) {
-            if (chrome.runtime.lastError) {
-                log("Error sending packet to peer: " + chrome.runtime.lastError.message);
-                return;
-            }
-            console.log("CONNECT packet send to peer (result code=" + result + ").");
-
-            chrome.bluetooth.read({ socket: socket }, function (result) {
-                if (chrome.runtime.lastError) {
-                    log("Error reading packet from peer: " + chrome.runtime.lastError.message);
-                    return;
-                }
-                console.log("packet received from peer (length=" + result.byteLength + ").");
-            });
-        });
-    };
+    //connectCallback[uuid] = (socket) => {
+    //  sendConnectRequest(socket, (socket, response) => {
+    //    sendDisconnectRequest(socket, response);
+    //  });
+    //};
+    connectCallback[uuid] = sendPutRequest;
 
     chrome.bluetooth.connect({ device: device, profile: profile }, function () {
         if (chrome.runtime.lastError)
