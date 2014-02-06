@@ -5,12 +5,12 @@ module Assert {
     throw new Error(msg);
   }
 
-  function assertImpl(value: boolean, msg: string) {
+  function assertImpl(value: boolean, msg?: string) {
     if (!value) {
-      if (msg)
-        msg = "Assertion failure: " + msg;
-      else
+      if (typeof msg === "undefined")
         msg = "Assertion failure.";
+      else
+        msg = "Assertion failure: " + msg;
       fail(msg);
     }
   }
@@ -53,6 +53,12 @@ module Tests {
 }
 
 module ObexTests {
+  Tests.run("TypedArrays", () => {
+    var x = new ArrayBuffer(0);
+    var y1 = new Uint8Array(x, 0, 0);
+    //var y2 = new DataView(x, 0, 0); // throws!
+  });
+
   Tests.run("Headers", () => {
     // Prepare
     // Act
@@ -65,6 +71,94 @@ module ObexTests {
     Assert.isTrue(Obex.HeaderIdentifiers.Length.isInt32);
     Assert.isFalse(Obex.HeaderIdentifiers.Type.isUnicode);
     Assert.isTrue(Obex.HeaderIdentifiers.Type.isByteSequence);
+  });
+
+  Tests.run("ByteArrayView_emtpy", () => {
+    // Prepare
+
+    // Act
+    var view = new Obex.ByteArrayView(new ArrayBuffer(0), 0, 0);
+
+    // Assert
+    Assert.isEqual(0, view.byteLength);
+  });
+
+  Tests.run("ByteArrayView_setUint8", () => {
+    // Prepare
+    var view = new Obex.ByteArrayView(new ArrayBuffer(20), 2, 10);
+
+    // Act
+    view.setUint8(5, 63);
+
+    // Assert
+    Assert.isEqual(10, view.byteLength);
+    Assert.isEqual(63, view.getUint8(5));
+  });
+
+  Tests.run("ByteArrayView_SetData", () => {
+    // Prepare
+    var view = new Obex.ByteArrayView(new ArrayBuffer(20), 2, 10);
+    var data = new Obex.ByteArrayView(new ArrayBuffer(5));
+    data.setUint8(0, 10);
+    data.setUint8(1, 11);
+    data.setUint8(2, 12);
+    data.setUint8(3, 13);
+    data.setUint8(4, 14);
+
+    // Act
+    view.setData(data, 4);
+
+    // Assert
+    Assert.isEqual(0, view.getUint8(0));
+    Assert.isEqual(0, view.getUint8(1));
+    Assert.isEqual(0, view.getUint8(2));
+    Assert.isEqual(0, view.getUint8(3));
+    Assert.isEqual(10, view.getUint8(4));
+    Assert.isEqual(11, view.getUint8(5));
+    Assert.isEqual(12, view.getUint8(6));
+    Assert.isEqual(13, view.getUint8(7));
+    Assert.isEqual(14, view.getUint8(8));
+    Assert.isEqual(0, view.getUint8(9));
+
+    Assert.isEqual(10, view.subarray(4, 5).getUint8(0));
+    Assert.isEqual(11, view.subarray(0).getUint8(5));
+    Assert.isEqual(12, view.subarray(1).getUint8(5));
+    Assert.isEqual(13, view.subarray(0, view.byteLength).getUint8(7));
+    Assert.isEqual(14, view.subarray(8, 9).getUint8(0));
+  });
+
+  Tests.run("ByteArrayView_Subarray", () => {
+    // Prepare
+    var view = new Obex.ByteArrayView(new ArrayBuffer(20), 2, 10);
+    var data = new Obex.ByteArrayView(new ArrayBuffer(5));
+    data.setUint8(0, 10);
+    data.setUint8(1, 11);
+    data.setUint8(2, 12);
+    data.setUint8(3, 13);
+    data.setUint8(4, 14);
+
+    // Act
+    view.setData(data, 4);
+
+    // Assert
+    Assert.isEqual(10, view.subarray(4, 5).getUint8(0));
+    Assert.isEqual(11, view.subarray(0).getUint8(5));
+    Assert.isEqual(12, view.subarray(1).getUint8(5));
+    Assert.isEqual(13, view.subarray(0, view.byteLength).getUint8(7));
+    Assert.isEqual(14, view.subarray(8, 9).getUint8(0));
+  });
+
+  Tests.run("ByteArrayView_ToArrayBuffer", () => {
+    // Prepare
+    var empty_view = new Obex.ByteArrayView(new ArrayBuffer(10), 0, 0);
+    var view = new Obex.ByteArrayView(new ArrayBuffer(5), 1, 3);
+
+    // Act
+    view.setUint8(2, 127);
+
+    // Assert
+    Assert.isEqual(0, empty_view.toArrayBuffer().byteLength);
+    Assert.isEqual(3, view.toArrayBuffer().byteLength);
   });
 
   Tests.run("ByteStream1", () => {
@@ -99,13 +193,13 @@ module ObexTests {
     }
   });
 
-  Tests.run("Encoder1", () => {
+  Tests.run("HeaderListBuilder1", () => {
     // Prepare
-    var encoder = new Obex.HeaderListBuilder();
+    var builder = new Obex.HeaderListBuilder();
 
     // Act
     var stream = new Obex.ByteStream();
-    encoder.serialize(stream);
+    builder.serialize(stream);
     var buffer = stream.toArrayBuffer();
 
     // Assert
@@ -113,7 +207,7 @@ module ObexTests {
     Assert.isEqual(0, buffer.byteLength);
   });
 
-  Tests.run("Encoder2", () => {
+  Tests.run("HeaderListBuilder2", () => {
     // Prepare
     var encoder = new Obex.HeaderListBuilder();
     encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(1);
@@ -128,7 +222,7 @@ module ObexTests {
     Assert.isEqual(5, buffer.byteLength);
   });
 
-  Tests.run("Encoder3", () => {
+  Tests.run("HeaderListBuilder3", () => {
     // Prepare
     var encoder = new Obex.HeaderListBuilder();
     // 1 + 4 bytes
@@ -138,7 +232,7 @@ module ObexTests {
     // 1 + 4 bytes
     encoder.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(245);
     // 1 + 2 + 100 bytes
-    encoder.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(new Uint8Array(100));
+    encoder.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(new Obex.ByteArrayView(new ArrayBuffer(100)));
 
     // Act
     var stream = new Obex.ByteStream();
@@ -185,8 +279,8 @@ module ObexTests {
     });
 
     // Act
-    parser.addData(dataStream.buffer.toUint8Array().subarray(0, 3));
-    parser.addData(dataStream.buffer.toUint8Array().subarray(3, 10));
+    parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 3));
+    parser.addData(dataStream.buffer.toByteArrayView().subarray(3, 10));
 
     // Assert
     Assert.isEqual(1, responseCount);
@@ -217,7 +311,7 @@ module ObexTests {
     });
 
     // Act
-    parser.addData(dataStream.buffer.toUint8Array().subarray(0, 13));
+    parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 13));
 
     // Assert
     Assert.isEqual(1, responseCount);
@@ -228,7 +322,7 @@ module ObexTests {
     lastResponse = null;
 
     // Act
-    parser.addData(dataStream.buffer.toUint8Array().subarray(13, 14));
+    parser.addData(dataStream.buffer.toByteArrayView().subarray(13, 14));
 
     // Assert
     Assert.isEqual(2, responseCount);
@@ -245,12 +339,12 @@ module ObexTests {
     builder.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(10);
     builder.headerList.add(Obex.HeaderIdentifiers.Name).value.setUnicode("hello");
     var buffer = new ArrayBuffer(150);
-    var view = new Uint8Array(buffer, 10, 100);
+    var view = new Obex.ByteArrayView(buffer, 10, 100);
     builder.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(view);
 
     var stream = new Obex.ByteStream();
     builder.serialize(stream);
-    var bufferView = stream.buffer.toDataView();
+    var bufferView = stream.buffer.toByteArrayView();
 
     // Act
     var parser = new Obex.HeaderListParser(bufferView);
@@ -266,6 +360,9 @@ module ObexTests {
     Assert.isEqual(4, list.get(Obex.HeaderIdentifiers.Count).value.asInt);
     Assert.isEqual(10, list.get(Obex.HeaderIdentifiers.Length).value.asInt);
     Assert.isEqual("hello", list.get(Obex.HeaderIdentifiers.Name).value.asString);
-    Assert.isEqual(100, list.get(Obex.HeaderIdentifiers.Body).value.asUint8Array.byteLength);
+    Assert.isEqual(100, list.get(Obex.HeaderIdentifiers.Body).value.asByteArrayView.byteLength);
   });
+
+  function foo(x: number, y = x) {
+  }
 }

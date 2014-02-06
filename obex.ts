@@ -3,19 +3,23 @@
 // message is a set of headers followed by a body.
 
 module Obex {
-  export function dumpDataView(data: DataView) {
+  var LittleEndian = false;
+
+  export function dumpByteArrayView(data: ByteArrayView) {
     var msg;
-    console.log(
-      "DataView: buffer length=" + data.buffer.byteLength + ", " +
-      "view offset=" + data.byteOffset + ", " +
-      "view length=" + data.byteLength);
+    console.log("ByteArrayView: length=" + data.byteLength);
 
     var txt = "";
     for (var i = 0; i < data.byteLength; i++) {
-      if (i > 0 && (i % 32) == 0)
-        txt += "\n";
-      else if (i > 0)
-        txt += " ";
+      if (i > 0) {
+        if ((i % 16) == 0) {
+          console.log("  Content: " + txt);
+          txt = "";
+        }
+        else {
+          txt += " ";
+        }
+      }
 
       var hex = data.getUint8(i).toString(16);
       if (hex.length == 1)
@@ -23,16 +27,83 @@ module Obex {
       txt += "0x" + hex;
     }
 
-    console.log("Data: " + txt);
+    if (txt.length > 0);
+      console.log("  Content: " + txt);
   }
 
   export function dumpArrayBuffer(buffer: ArrayBuffer) {
-    dumpDataView(new DataView(buffer));
+    dumpByteArrayView(new ByteArrayView(buffer));
+  }
+
+  // Implements an interface similar to the union of DataView and Uint8Buffer.
+  export class ByteArrayView {
+    private _view: DataView;
+    private static emptyBuffer = new ArrayBuffer(1);
+
+    public constructor(buffer: ArrayBuffer, byteOffset?: number, length?: number) {
+      if (typeof byteOffset === "undefined")
+        byteOffset = 0;
+
+      if (typeof length === "undefined")
+        length = buffer.byteLength - byteOffset;
+
+      // Workaround DataView bug: new DataView(new ArrayBuffer(0), 0, 0) throws!
+      if (buffer.byteLength === 0 && byteOffset === 0 && length === 0)
+        buffer = ByteArrayView.emptyBuffer;
+
+      this._view = new DataView(buffer, byteOffset, length);
+    }
+
+    public get byteLength(): number { return this._view.byteLength; }
+    //public get byteOffset(): number { return this._view.byteOffset; }
+    //public get buffer(): ArrayBuffer { return this._view.buffer; }
+
+    public setUint8(offset: number, value: number): void {
+      this._view.setUint8(offset, value);
+    }
+
+    public getUint8(offset: number): number {
+      return this._view.getUint8(offset);
+    }
+
+    public getUint16(offset: number): number {
+      return this._view.getUint16(offset, LittleEndian);
+    }
+
+    public getUint32(offset: number): number {
+      return this._view.getUint32(offset, LittleEndian);
+    }
+
+    public subarray(start: number, end?: number): ByteArrayView {
+      if (typeof end === "undefined")
+        end = this._view.byteLength - this._view.byteOffset;
+      var length = end - start;
+      return new ByteArrayView(this._view.buffer, this._view.byteOffset + start, length);
+    }
+
+    public setData(data: ByteArrayView, offset: number) {
+      this.toUint8Array().set(data.toUint8Array(), offset);
+    }
+
+    // Return a Uint8Array wrapping the same view of the underlying buffer as
+    // this instance.
+    private toUint8Array(): Uint8Array {
+      return new Uint8Array(this._view.buffer, this._view.byteOffset, this._view.byteLength);
+    }
+
+    // Return an ArrayBuffer containing a *copy* of the underlying buffer
+    // content.
+    public toArrayBuffer(): ArrayBuffer {
+      var result = new ArrayBuffer(this.byteLength);
+      var view_dest = new ByteArrayView(result);
+      view_dest.setData(this, 0);
+      return result;
+    }
   }
 
   // Simple growable buffer
   export class GrowableBuffer {
-    private _bytes = new DataView(new ArrayBuffer(8));
+    private _bytes = new ByteArrayView(new ArrayBuffer(8));
     private _length = 0;
 
     public get capacity(): number { return this._bytes.byteLength; }
@@ -61,44 +132,34 @@ module Obex {
 
     // Copy the content of |data| into the buffer at |offset|. The buffer length
     // must be big enough to contain the copied data.
-    public setData(offset: number, data: Uint8Array) {
-      var view = this.toUint8Array();
-      view.set(data, offset);
+    public setData(offset: number, data: ByteArrayView) {
+      var view = this.toByteArrayView();
+      view.setData(data, offset);
     }
 
-    // Return a UInt8Array wrapping the buffer content. Note the underlying
+    // Return a ByteArrayView wrapping the buffer content. Note the underlying
     // buffer content is not copied, so the returned view is only valid as long
     // as the buffer is unchanged.
-    public toUint8Array(): Uint8Array {
-      return new Uint8Array(this._bytes.buffer, 0, this._length);
-    }
-
-    // Return a DataView wrapping the buffer content. Note the underlying buffer
-    // content is not copied, so the returned view is only valid as long as the
-    // buffer is unchanged.
-    public toDataView(): DataView {
-      return new DataView(this._bytes.buffer, 0, this._length);
+    public toByteArrayView(): ByteArrayView {
+      return this._bytes.subarray(0, this._length);
     }
 
     // Return an ArrayBuffer containing a *copy* of the buffer content.
     public toArrayBuffer(): ArrayBuffer {
-      var view = this.toUint8Array();
-      var result = new Uint8Array(view.byteLength);
-      result.set(view, 0);
-      return result.buffer;
+      var content = this._bytes.subarray(0, this._length);
+      return content.toArrayBuffer();
     }
 
     private grow(): void {
+      // Create new (larger) buffer
       var new_len = this._bytes.byteLength * 2;
-      var new_buffer = new ArrayBuffer(new_len);
+      var new_view = new ByteArrayView(new ArrayBuffer(new_len));
 
       // Copy old buffer content to new one
-      var old_array = new Uint8Array(this._bytes.buffer);
-      var new_array = new Uint8Array(new_buffer);
-      new_array.set(old_array, 0);
+      new_view.setData(this.toByteArrayView(), 0);
 
       // Assign new buffer
-      this._bytes = new DataView(new_buffer);
+      this._bytes = new_view;
     }
   }
 
@@ -133,7 +194,7 @@ module Obex {
       this.setUint16(offset, value);
     }
 
-    public addData(data: Uint8Array) {
+    public addData(data: ByteArrayView) {
       var offset = this.length;
       this._buffer.setLength(offset + data.byteLength);
       this._buffer.setData(offset, data);
@@ -193,7 +254,7 @@ module Obex {
     private _kind: HeaderValueKind;
     private _intValue: number;
     private _stringValue: string;
-    private _byteSequence: Uint8Array;
+    private _byteSequence: ByteArrayView;
 
     public constructor(kind: HeaderValueKind) {
       this._kind = kind;
@@ -214,7 +275,7 @@ module Obex {
       return this._stringValue;
     }
 
-    public get asUint8Array(): Uint8Array {
+    public get asByteArrayView(): ByteArrayView {
       if (this._kind != HeaderValueKind.ByteSequence)
         throw new Error("Value must be of ByteSequence kind.");
       return this._byteSequence;
@@ -244,7 +305,7 @@ module Obex {
       this._stringValue = value;
     }
 
-    public setByteSequence(value: Uint8Array): void {
+    public setByteSequence(value: ByteArrayView): void {
       if (value === null)
         throw new Error("value is null.");
       if (this._kind != HeaderValueKind.ByteSequence)
@@ -362,11 +423,10 @@ module Obex {
 
 
   export class HeaderListParser {
-    private _littleEndian = false;
-    private _data: DataView;
+    private _data: ByteArrayView;
     private _offset = 0;
 
-    public constructor(data: DataView) {
+    public constructor(data: ByteArrayView) {
       this._data = data;
     }
 
@@ -377,13 +437,13 @@ module Obex {
     }
 
     private fetchUint16(): number {
-      var result = this._data.getUint16(this._offset, this._littleEndian);
+      var result = this._data.getUint16(this._offset);
       this._offset += 2;
       return result;
     }
 
     private fetchUint32(): number {
-      var result = this._data.getUint32(this._offset, this._littleEndian);
+      var result = this._data.getUint32(this._offset);
       this._offset += 4;
       return result;
     }
@@ -444,12 +504,12 @@ module Obex {
       return result;
     }
 
-    private parseByteSequence(): Uint8Array {
+    private parseByteSequence(): ByteArrayView {
       var length = this.fetchUint16();
       if (length < 3)
         throw new Error("Invalid byte sequence format");
       var byteLength = length - 3;
-      var result = new Uint8Array(this._data.buffer, this._data.byteOffset + this._offset, byteLength);
+      var result = this._data.subarray(this._offset, this._offset + byteLength);
       this._offset += byteLength;
       return result;
     }
@@ -543,14 +603,14 @@ module Obex {
     public get description(): string { return this.headerList.add(Obex.HeaderIdentifiers.Description).value.asString; }
     public set description(value: string) { this.headerList.add(Obex.HeaderIdentifiers.Description).value.setUnicode(value); }
 
-    public get type(): Uint8Array { return this.headerList.add(Obex.HeaderIdentifiers.Type).value.asUint8Array; }
-    public set type(value: Uint8Array) { this.headerList.add(Obex.HeaderIdentifiers.Type).value.setByteSequence(value); }
+    public get type(): ByteArrayView { return this.headerList.add(Obex.HeaderIdentifiers.Type).value.asByteArrayView; }
+    public set type(value: ByteArrayView) { this.headerList.add(Obex.HeaderIdentifiers.Type).value.setByteSequence(value); }
 
-    public get body(): Uint8Array { return this.headerList.add(Obex.HeaderIdentifiers.Body).value.asUint8Array; }
-    public set body(value: Uint8Array) { this.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(value); }
+    public get body(): ByteArrayView { return this.headerList.add(Obex.HeaderIdentifiers.Body).value.asByteArrayView; }
+    public set body(value: ByteArrayView) { this.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(value); }
 
-    public get endOfbody(): Uint8Array { return this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.asUint8Array; }
-    public set endOfbody(value: Uint8Array) { this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.setByteSequence(value); }
+    public get endOfbody(): ByteArrayView { return this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.asByteArrayView; }
+    public set endOfbody(value: ByteArrayView) { this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.setByteSequence(value); }
   }
 
   export enum ResponseCode {
@@ -563,26 +623,25 @@ module Obex {
   }
 
   export class Response {
-    private _data: DataView;
-    private _responseData: DataView;
-    private _littleEndian = false;
+    private _data: ByteArrayView;
+    private _responseData: ByteArrayView;
 
-    public constructor(data: Uint8Array) {
-      this._data = new DataView(data.buffer, data.byteOffset, data.byteLength);
-      this._responseData = new DataView(data.buffer, data.byteOffset + 3, data.byteLength - 3); // Skip opcode and length
+    public constructor(data: ByteArrayView) {
+      this._data = data;
+      this._responseData = data.subarray(3); // Skip opcode and length
     }
     public get opCode(): number { return this._data.getUint8(0); }
     public get isFinal(): boolean { return (this.opCode & 0x80) !== 0; }
     public get code(): ResponseCode { return this.opCode & 0x7f; }
-    public get length(): number { return this._data.getUint16(1, this._littleEndian); }
-    public get data(): DataView { return this._responseData; }
+    public get length(): number { return this._data.getUint16(1); }
+    public get data(): ByteArrayView { return this._responseData; }
   }
 
   export class ResponseParser {
     private _data = new GrowableBuffer();
     private _onResponse: (value: Response) => void;
 
-    public addData(data: Uint8Array) {
+    public addData(data: ByteArrayView) {
       // Add |data| at end of array.
       var offset = this._data.length;
       this._data.setLength(this._data.length + data.byteLength);
@@ -600,12 +659,12 @@ module Obex {
       if (this._data.length < 3)
         return;
 
-      var response = new Response(this._data.toUint8Array());
+      var response = new Response(this._data.toByteArrayView());
       var responseLength = response.length;
       if (responseLength > this._data.length)
         return;
       if (responseLength <= this._data.length) {
-        response = new Response(this._data.toUint8Array().subarray(0, responseLength));
+        response = new Response(this._data.toByteArrayView().subarray(0, responseLength));
       }
       this.flushResponse(responseLength);
       this._onResponse(response);
@@ -613,7 +672,7 @@ module Obex {
 
     private flushResponse(responseLength: number): void {
       var remaining_length = this._data.length - responseLength;
-      var remaining_data = this._data.toUint8Array().subarray(responseLength, this._data.length); 
+      var remaining_data = this._data.toByteArrayView().subarray(responseLength, this._data.length); 
       var new_data = new GrowableBuffer();
       new_data.setLength(remaining_length);
       new_data.setData(0, remaining_data);
@@ -632,10 +691,8 @@ module Obex {
     public get maxPacketSize(): number { return this._response.data.getUint16(2); }
     public get headerList(): HeaderList {
       if (this._headerList === null) {
-        var view = new DataView(
-          this._response.data.buffer,
-          this._response.data.byteOffset + 4,
-          this._response.data.byteLength - 4);
+        // 4 = 1 (version) + 1 (flags) + 2 (maxPacketSize)
+        var view = this._response.data.subarray(4);
         var parser = new HeaderListParser(view);
         this._headerList = parser.parse();
       }

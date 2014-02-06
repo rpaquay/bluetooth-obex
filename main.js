@@ -85,20 +85,15 @@ function readPoll(socket, callback) {
     });
 }
 
-function sendPutRequest(socket) {
+function sendPutRequest(socket, callback) {
     var builder = new Obex.PutRequestBuilder();
-
-    //builder.isFinal = false;
-    ////builder.name = "hello.txt";
-    //builder.length = 100;
-    ////builder.body = new Uint8Array(100);
     builder.isFinal = true;
     builder.length = 3;
     builder.name = "hello.txt";
-    builder.body = new Uint8Array(3);
-    var view = new DataView(builder.body.buffer);
+    builder.body = new Obex.ByteArrayView(new ArrayBuffer(3));
+    var view = builder.body;
     view.setUint8(0, 'a'.charCodeAt(0));
-    view.setUint8(1, 'a'.charCodeAt(0));
+    view.setUint8(1, 'b'.charCodeAt(0));
     view.setUint8(2, 'c'.charCodeAt(0));
 
     var stream = new Obex.ByteStream();
@@ -121,8 +116,9 @@ function sendPutRequest(socket) {
 
                 var headers = new Obex.HeaderListParser(response.data).parse();
                 console.log(headers);
+                callback(socket, response);
             });
-            parser.addData(new Uint8Array(result));
+            parser.addData(new Obex.ByteArrayView(result));
         });
     });
 }
@@ -154,7 +150,7 @@ function sendConnectRequest(socket, callback) {
                 console.log(connectResponse);
                 callback(socket, connectResponse);
             });
-            parser.addData(new Uint8Array(result));
+            parser.addData(new Obex.ByteArrayView(result));
         });
     });
 }
@@ -181,7 +177,7 @@ function sendDisconnectRequest(socket, response) {
                 console.log("response.isFinal=" + response.isFinal);
                 console.log(response);
             });
-            parser.addData(new Uint8Array(result));
+            parser.addData(new Obex.ByteArrayView(result));
         });
     });
 }
@@ -195,7 +191,13 @@ function ObjectPushClick(device) {
     //    sendDisconnectRequest(socket, response);
     //  });
     //};
-    connectCallback[uuid] = sendPutRequest;
+    connectCallback[uuid] = function (socket) {
+        sendPutRequest(socket, function (socket, response) {
+            chrome.bluetooth.disconnect({ socket: socket }, function () {
+                console.log("Socket closed!");
+            });
+        });
+    };
 
     chrome.bluetooth.connect({ device: device, profile: profile }, function () {
         if (chrome.runtime.lastError)

@@ -9,16 +9,22 @@ var __extends = this.__extends || function (d, b) {
 };
 var Obex;
 (function (Obex) {
-    function dumpDataView(data) {
+    var LittleEndian = false;
+
+    function dumpByteArrayView(data) {
         var msg;
-        console.log("DataView: buffer length=" + data.buffer.byteLength + ", " + "view offset=" + data.byteOffset + ", " + "view length=" + data.byteLength);
+        console.log("ByteArrayView: length=" + data.byteLength);
 
         var txt = "";
         for (var i = 0; i < data.byteLength; i++) {
-            if (i > 0 && (i % 32) == 0)
-                txt += "\n";
-            else if (i > 0)
-                txt += " ";
+            if (i > 0) {
+                if ((i % 16) == 0) {
+                    console.log("  Content: " + txt);
+                    txt = "";
+                } else {
+                    txt += " ";
+                }
+            }
 
             var hex = data.getUint8(i).toString(16);
             if (hex.length == 1)
@@ -26,19 +32,92 @@ var Obex;
             txt += "0x" + hex;
         }
 
-        console.log("Data: " + txt);
+        if (txt.length > 0)
+            ;
+        console.log("  Content: " + txt);
     }
-    Obex.dumpDataView = dumpDataView;
+    Obex.dumpByteArrayView = dumpByteArrayView;
 
     function dumpArrayBuffer(buffer) {
-        dumpDataView(new DataView(buffer));
+        dumpByteArrayView(new ByteArrayView(buffer));
     }
     Obex.dumpArrayBuffer = dumpArrayBuffer;
+
+    // Implements an interface similar to the union of DataView and Uint8Buffer.
+    var ByteArrayView = (function () {
+        function ByteArrayView(buffer, byteOffset, length) {
+            if (typeof byteOffset === "undefined")
+                byteOffset = 0;
+
+            if (typeof length === "undefined")
+                length = buffer.byteLength - byteOffset;
+
+            // Workaround DataView bug: new DataView(new ArrayBuffer(0), 0, 0) throws!
+            if (buffer.byteLength === 0 && byteOffset === 0 && length === 0)
+                buffer = ByteArrayView.emptyBuffer;
+
+            this._view = new DataView(buffer, byteOffset, length);
+        }
+        Object.defineProperty(ByteArrayView.prototype, "byteLength", {
+            get: function () {
+                return this._view.byteLength;
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        //public get byteOffset(): number { return this._view.byteOffset; }
+        //public get buffer(): ArrayBuffer { return this._view.buffer; }
+        ByteArrayView.prototype.setUint8 = function (offset, value) {
+            this._view.setUint8(offset, value);
+        };
+
+        ByteArrayView.prototype.getUint8 = function (offset) {
+            return this._view.getUint8(offset);
+        };
+
+        ByteArrayView.prototype.getUint16 = function (offset) {
+            return this._view.getUint16(offset, LittleEndian);
+        };
+
+        ByteArrayView.prototype.getUint32 = function (offset) {
+            return this._view.getUint32(offset, LittleEndian);
+        };
+
+        ByteArrayView.prototype.subarray = function (start, end) {
+            if (typeof end === "undefined")
+                end = this._view.byteLength - this._view.byteOffset;
+            var length = end - start;
+            return new ByteArrayView(this._view.buffer, this._view.byteOffset + start, length);
+        };
+
+        ByteArrayView.prototype.setData = function (data, offset) {
+            this.toUint8Array().set(data.toUint8Array(), offset);
+        };
+
+        // Return a Uint8Array wrapping the same view of the underlying buffer as
+        // this instance.
+        ByteArrayView.prototype.toUint8Array = function () {
+            return new Uint8Array(this._view.buffer, this._view.byteOffset, this._view.byteLength);
+        };
+
+        // Return an ArrayBuffer containing a *copy* of the underlying buffer
+        // content.
+        ByteArrayView.prototype.toArrayBuffer = function () {
+            var result = new ArrayBuffer(this.byteLength);
+            var view_dest = new ByteArrayView(result);
+            view_dest.setData(this, 0);
+            return result;
+        };
+        ByteArrayView.emptyBuffer = new ArrayBuffer(1);
+        return ByteArrayView;
+    })();
+    Obex.ByteArrayView = ByteArrayView;
 
     // Simple growable buffer
     var GrowableBuffer = (function () {
         function GrowableBuffer() {
-            this._bytes = new DataView(new ArrayBuffer(8));
+            this._bytes = new ByteArrayView(new ArrayBuffer(8));
             this._length = 0;
         }
         Object.defineProperty(GrowableBuffer.prototype, "capacity", {
@@ -80,43 +159,33 @@ var Obex;
         // Copy the content of |data| into the buffer at |offset|. The buffer length
         // must be big enough to contain the copied data.
         GrowableBuffer.prototype.setData = function (offset, data) {
-            var view = this.toUint8Array();
-            view.set(data, offset);
+            var view = this.toByteArrayView();
+            view.setData(data, offset);
         };
 
-        // Return a UInt8Array wrapping the buffer content. Note the underlying
+        // Return a ByteArrayView wrapping the buffer content. Note the underlying
         // buffer content is not copied, so the returned view is only valid as long
         // as the buffer is unchanged.
-        GrowableBuffer.prototype.toUint8Array = function () {
-            return new Uint8Array(this._bytes.buffer, 0, this._length);
-        };
-
-        // Return a DataView wrapping the buffer content. Note the underlying buffer
-        // content is not copied, so the returned view is only valid as long as the
-        // buffer is unchanged.
-        GrowableBuffer.prototype.toDataView = function () {
-            return new DataView(this._bytes.buffer, 0, this._length);
+        GrowableBuffer.prototype.toByteArrayView = function () {
+            return this._bytes.subarray(0, this._length);
         };
 
         // Return an ArrayBuffer containing a *copy* of the buffer content.
         GrowableBuffer.prototype.toArrayBuffer = function () {
-            var view = this.toUint8Array();
-            var result = new Uint8Array(view.byteLength);
-            result.set(view, 0);
-            return result.buffer;
+            var content = this._bytes.subarray(0, this._length);
+            return content.toArrayBuffer();
         };
 
         GrowableBuffer.prototype.grow = function () {
+            // Create new (larger) buffer
             var new_len = this._bytes.byteLength * 2;
-            var new_buffer = new ArrayBuffer(new_len);
+            var new_view = new ByteArrayView(new ArrayBuffer(new_len));
 
             // Copy old buffer content to new one
-            var old_array = new Uint8Array(this._bytes.buffer);
-            var new_array = new Uint8Array(new_buffer);
-            new_array.set(old_array, 0);
+            new_view.setData(this.toByteArrayView(), 0);
 
             // Assign new buffer
-            this._bytes = new DataView(new_buffer);
+            this._bytes = new_view;
         };
         return GrowableBuffer;
     })();
@@ -278,7 +347,7 @@ var Obex;
             configurable: true
         });
 
-        Object.defineProperty(HeaderValue.prototype, "asUint8Array", {
+        Object.defineProperty(HeaderValue.prototype, "asByteArrayView", {
             get: function () {
                 if (this._kind != 64 /* ByteSequence */)
                     throw new Error("Value must be of ByteSequence kind.");
@@ -460,7 +529,6 @@ var Obex;
 
     var HeaderListParser = (function () {
         function HeaderListParser(data) {
-            this._littleEndian = false;
             this._offset = 0;
             this._data = data;
         }
@@ -471,13 +539,13 @@ var Obex;
         };
 
         HeaderListParser.prototype.fetchUint16 = function () {
-            var result = this._data.getUint16(this._offset, this._littleEndian);
+            var result = this._data.getUint16(this._offset);
             this._offset += 2;
             return result;
         };
 
         HeaderListParser.prototype.fetchUint32 = function () {
-            var result = this._data.getUint32(this._offset, this._littleEndian);
+            var result = this._data.getUint32(this._offset);
             this._offset += 4;
             return result;
         };
@@ -544,7 +612,7 @@ var Obex;
             if (length < 3)
                 throw new Error("Invalid byte sequence format");
             var byteLength = length - 3;
-            var result = new Uint8Array(this._data.buffer, this._data.byteOffset + this._offset, byteLength);
+            var result = this._data.subarray(this._offset, this._offset + byteLength);
             this._offset += byteLength;
             return result;
         };
@@ -734,7 +802,7 @@ var Obex;
 
         Object.defineProperty(PutRequestBuilder.prototype, "type", {
             get: function () {
-                return this.headerList.add(Obex.HeaderIdentifiers.Type).value.asUint8Array;
+                return this.headerList.add(Obex.HeaderIdentifiers.Type).value.asByteArrayView;
             },
             set: function (value) {
                 this.headerList.add(Obex.HeaderIdentifiers.Type).value.setByteSequence(value);
@@ -745,7 +813,7 @@ var Obex;
 
         Object.defineProperty(PutRequestBuilder.prototype, "body", {
             get: function () {
-                return this.headerList.add(Obex.HeaderIdentifiers.Body).value.asUint8Array;
+                return this.headerList.add(Obex.HeaderIdentifiers.Body).value.asByteArrayView;
             },
             set: function (value) {
                 this.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(value);
@@ -756,7 +824,7 @@ var Obex;
 
         Object.defineProperty(PutRequestBuilder.prototype, "endOfbody", {
             get: function () {
-                return this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.asUint8Array;
+                return this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.asByteArrayView;
             },
             set: function (value) {
                 this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.setByteSequence(value);
@@ -780,9 +848,8 @@ var Obex;
 
     var Response = (function () {
         function Response(data) {
-            this._littleEndian = false;
-            this._data = new DataView(data.buffer, data.byteOffset, data.byteLength);
-            this._responseData = new DataView(data.buffer, data.byteOffset + 3, data.byteLength - 3); // Skip opcode and length
+            this._data = data;
+            this._responseData = data.subarray(3); // Skip opcode and length
         }
         Object.defineProperty(Response.prototype, "opCode", {
             get: function () {
@@ -807,7 +874,7 @@ var Obex;
         });
         Object.defineProperty(Response.prototype, "length", {
             get: function () {
-                return this._data.getUint16(1, this._littleEndian);
+                return this._data.getUint16(1);
             },
             enumerable: true,
             configurable: true
@@ -845,12 +912,12 @@ var Obex;
             if (this._data.length < 3)
                 return;
 
-            var response = new Response(this._data.toUint8Array());
+            var response = new Response(this._data.toByteArrayView());
             var responseLength = response.length;
             if (responseLength > this._data.length)
                 return;
             if (responseLength <= this._data.length) {
-                response = new Response(this._data.toUint8Array().subarray(0, responseLength));
+                response = new Response(this._data.toByteArrayView().subarray(0, responseLength));
             }
             this.flushResponse(responseLength);
             this._onResponse(response);
@@ -858,7 +925,7 @@ var Obex;
 
         ResponseParser.prototype.flushResponse = function (responseLength) {
             var remaining_length = this._data.length - responseLength;
-            var remaining_data = this._data.toUint8Array().subarray(responseLength, this._data.length);
+            var remaining_data = this._data.toByteArrayView().subarray(responseLength, this._data.length);
             var new_data = new GrowableBuffer();
             new_data.setLength(remaining_length);
             new_data.setData(0, remaining_data);
@@ -904,7 +971,8 @@ var Obex;
         Object.defineProperty(ConnectResponse.prototype, "headerList", {
             get: function () {
                 if (this._headerList === null) {
-                    var view = new DataView(this._response.data.buffer, this._response.data.byteOffset + 4, this._response.data.byteLength - 4);
+                    // 4 = 1 (version) + 1 (flags) + 2 (maxPacketSize)
+                    var view = this._response.data.subarray(4);
                     var parser = new HeaderListParser(view);
                     this._headerList = parser.parse();
                 }
@@ -927,10 +995,10 @@ var Assert;
 
     function assertImpl(value, msg) {
         if (!value) {
-            if (msg)
-                msg = "Assertion failure: " + msg;
-            else
+            if (typeof msg === "undefined")
                 msg = "Assertion failure.";
+            else
+                msg = "Assertion failure: " + msg;
             fail(msg);
         }
     }
@@ -980,6 +1048,12 @@ var Tests;
 
 var ObexTests;
 (function (ObexTests) {
+    Tests.run("TypedArrays", function () {
+        var x = new ArrayBuffer(0);
+        var y1 = new Uint8Array(x, 0, 0);
+        //var y2 = new DataView(x, 0, 0); // throws!
+    });
+
     Tests.run("Headers", function () {
         // Prepare
         // Act
@@ -992,6 +1066,93 @@ var ObexTests;
         Assert.isTrue(Obex.HeaderIdentifiers.Length.isInt32);
         Assert.isFalse(Obex.HeaderIdentifiers.Type.isUnicode);
         Assert.isTrue(Obex.HeaderIdentifiers.Type.isByteSequence);
+    });
+
+    Tests.run("ByteArrayView_emtpy", function () {
+        // Prepare
+        // Act
+        var view = new Obex.ByteArrayView(new ArrayBuffer(0), 0, 0);
+
+        // Assert
+        Assert.isEqual(0, view.byteLength);
+    });
+
+    Tests.run("ByteArrayView_setUint8", function () {
+        // Prepare
+        var view = new Obex.ByteArrayView(new ArrayBuffer(20), 2, 10);
+
+        // Act
+        view.setUint8(5, 63);
+
+        // Assert
+        Assert.isEqual(10, view.byteLength);
+        Assert.isEqual(63, view.getUint8(5));
+    });
+
+    Tests.run("ByteArrayView_SetData", function () {
+        // Prepare
+        var view = new Obex.ByteArrayView(new ArrayBuffer(20), 2, 10);
+        var data = new Obex.ByteArrayView(new ArrayBuffer(5));
+        data.setUint8(0, 10);
+        data.setUint8(1, 11);
+        data.setUint8(2, 12);
+        data.setUint8(3, 13);
+        data.setUint8(4, 14);
+
+        // Act
+        view.setData(data, 4);
+
+        // Assert
+        Assert.isEqual(0, view.getUint8(0));
+        Assert.isEqual(0, view.getUint8(1));
+        Assert.isEqual(0, view.getUint8(2));
+        Assert.isEqual(0, view.getUint8(3));
+        Assert.isEqual(10, view.getUint8(4));
+        Assert.isEqual(11, view.getUint8(5));
+        Assert.isEqual(12, view.getUint8(6));
+        Assert.isEqual(13, view.getUint8(7));
+        Assert.isEqual(14, view.getUint8(8));
+        Assert.isEqual(0, view.getUint8(9));
+
+        Assert.isEqual(10, view.subarray(4, 5).getUint8(0));
+        Assert.isEqual(11, view.subarray(0).getUint8(5));
+        Assert.isEqual(12, view.subarray(1).getUint8(5));
+        Assert.isEqual(13, view.subarray(0, view.byteLength).getUint8(7));
+        Assert.isEqual(14, view.subarray(8, 9).getUint8(0));
+    });
+
+    Tests.run("ByteArrayView_Subarray", function () {
+        // Prepare
+        var view = new Obex.ByteArrayView(new ArrayBuffer(20), 2, 10);
+        var data = new Obex.ByteArrayView(new ArrayBuffer(5));
+        data.setUint8(0, 10);
+        data.setUint8(1, 11);
+        data.setUint8(2, 12);
+        data.setUint8(3, 13);
+        data.setUint8(4, 14);
+
+        // Act
+        view.setData(data, 4);
+
+        // Assert
+        Assert.isEqual(10, view.subarray(4, 5).getUint8(0));
+        Assert.isEqual(11, view.subarray(0).getUint8(5));
+        Assert.isEqual(12, view.subarray(1).getUint8(5));
+        Assert.isEqual(13, view.subarray(0, view.byteLength).getUint8(7));
+        Assert.isEqual(14, view.subarray(8, 9).getUint8(0));
+    });
+
+    Tests.run("ByteArrayView_ToArrayBuffer", function () {
+        // Prepare
+        var empty_view = new Obex.ByteArrayView(new ArrayBuffer(10), 0, 0);
+        var view = new Obex.ByteArrayView(new ArrayBuffer(5), 1, 3);
+
+        // Act
+        view.setUint8(2, 127);
+
+        // Assert
+        Assert.isEqual(0, empty_view.toArrayBuffer().byteLength);
+        Assert.isEqual(3, view.toArrayBuffer().byteLength);
     });
 
     Tests.run("ByteStream1", function () {
@@ -1025,13 +1186,13 @@ var ObexTests;
         }
     });
 
-    Tests.run("Encoder1", function () {
+    Tests.run("HeaderListBuilder1", function () {
         // Prepare
-        var encoder = new Obex.HeaderListBuilder();
+        var builder = new Obex.HeaderListBuilder();
 
         // Act
         var stream = new Obex.ByteStream();
-        encoder.serialize(stream);
+        builder.serialize(stream);
         var buffer = stream.toArrayBuffer();
 
         // Assert
@@ -1039,7 +1200,7 @@ var ObexTests;
         Assert.isEqual(0, buffer.byteLength);
     });
 
-    Tests.run("Encoder2", function () {
+    Tests.run("HeaderListBuilder2", function () {
         // Prepare
         var encoder = new Obex.HeaderListBuilder();
         encoder.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(1);
@@ -1054,7 +1215,7 @@ var ObexTests;
         Assert.isEqual(5, buffer.byteLength);
     });
 
-    Tests.run("Encoder3", function () {
+    Tests.run("HeaderListBuilder3", function () {
         // Prepare
         var encoder = new Obex.HeaderListBuilder();
 
@@ -1068,7 +1229,7 @@ var ObexTests;
         encoder.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(245);
 
         // 1 + 2 + 100 bytes
-        encoder.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(new Uint8Array(100));
+        encoder.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(new Obex.ByteArrayView(new ArrayBuffer(100)));
 
         // Act
         var stream = new Obex.ByteStream();
@@ -1115,8 +1276,8 @@ var ObexTests;
         });
 
         // Act
-        parser.addData(dataStream.buffer.toUint8Array().subarray(0, 3));
-        parser.addData(dataStream.buffer.toUint8Array().subarray(3, 10));
+        parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 3));
+        parser.addData(dataStream.buffer.toByteArrayView().subarray(3, 10));
 
         // Assert
         Assert.isEqual(1, responseCount);
@@ -1147,7 +1308,7 @@ var ObexTests;
         });
 
         // Act
-        parser.addData(dataStream.buffer.toUint8Array().subarray(0, 13));
+        parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 13));
 
         // Assert
         Assert.isEqual(1, responseCount);
@@ -1158,7 +1319,7 @@ var ObexTests;
         lastResponse = null;
 
         // Act
-        parser.addData(dataStream.buffer.toUint8Array().subarray(13, 14));
+        parser.addData(dataStream.buffer.toByteArrayView().subarray(13, 14));
 
         // Assert
         Assert.isEqual(2, responseCount);
@@ -1175,12 +1336,12 @@ var ObexTests;
         builder.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(10);
         builder.headerList.add(Obex.HeaderIdentifiers.Name).value.setUnicode("hello");
         var buffer = new ArrayBuffer(150);
-        var view = new Uint8Array(buffer, 10, 100);
+        var view = new Obex.ByteArrayView(buffer, 10, 100);
         builder.headerList.add(Obex.HeaderIdentifiers.Body).value.setByteSequence(view);
 
         var stream = new Obex.ByteStream();
         builder.serialize(stream);
-        var bufferView = stream.buffer.toDataView();
+        var bufferView = stream.buffer.toByteArrayView();
 
         // Act
         var parser = new Obex.HeaderListParser(bufferView);
@@ -1196,6 +1357,10 @@ var ObexTests;
         Assert.isEqual(4, list.get(Obex.HeaderIdentifiers.Count).value.asInt);
         Assert.isEqual(10, list.get(Obex.HeaderIdentifiers.Length).value.asInt);
         Assert.isEqual("hello", list.get(Obex.HeaderIdentifiers.Name).value.asString);
-        Assert.isEqual(100, list.get(Obex.HeaderIdentifiers.Body).value.asUint8Array.byteLength);
+        Assert.isEqual(100, list.get(Obex.HeaderIdentifiers.Body).value.asByteArrayView.byteLength);
     });
+
+    function foo(x, y) {
+        if (typeof y === "undefined") { y = x; }
+    }
 })(ObexTests || (ObexTests = {}));

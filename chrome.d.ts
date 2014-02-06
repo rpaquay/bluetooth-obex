@@ -77,6 +77,12 @@ declare module Bluetooth {
     socket: Socket;
   }
 
+  // Options for the disconnect function.
+  export interface DisconnectOptions {
+    // The socket to disconnect.
+    socket: Socket;
+  }
+
   export interface Bluetooth {
     getProfiles(options: GetProfilesOptions, result: (profiles: Profile[]) => void);
     addProfile(...argArray: any[]): any;
@@ -85,6 +91,7 @@ declare module Bluetooth {
     getServices(...argArray: any[]): any;
     getAdapterState(...argArray: any[]): any;
     connect(...argArray: any[]): any;
+    disconnect(options: DisconnectOptions, result?: () => void): any;
     write(options: WriteOptions, result: (result: number) => void): void;
     read(options: ReadOptions, result: (result?: ArrayBuffer) => void): void;
     onConnection: any;
