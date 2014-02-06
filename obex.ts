@@ -165,7 +165,7 @@ module Obex {
     private _kind: HeaderValueKind;
     private _intValue: number;
     private _stringValue: string;
-    private _byteSequence: ArrayBuffer;
+    private _byteSequence: Uint8Array;
 
     public constructor(kind: HeaderValueKind) {
       this._kind = kind;
@@ -186,7 +186,7 @@ module Obex {
       return this._stringValue;
     }
 
-    public get asArrayBuffer(): ArrayBuffer {
+    public get asUint8Array(): Uint8Array {
       if (this._kind != HeaderValueKind.ByteSequence)
         throw new Error("Value must be of ByteSequence kind.");
       return this._byteSequence;
@@ -216,7 +216,7 @@ module Obex {
       this._stringValue = value;
     }
 
-    public setByteSequence(value: ArrayBuffer): void {
+    public setByteSequence(value: Uint8Array): void {
       if (value === null)
         throw new Error("value is null.");
       if (this._kind != HeaderValueKind.ByteSequence)
@@ -238,8 +238,7 @@ module Obex {
         }
       } else if (this._kind === HeaderValueKind.ByteSequence) {
         stream.addUint16(this._byteSequence.byteLength);
-        var view = new Uint8Array(this._byteSequence);
-        stream.addData(view);
+        stream.addData(this._byteSequence);
       } else {
         throw new Error("Invalid value type.");
       }
@@ -259,13 +258,25 @@ module Obex {
   export class HeaderList {
     private _items: HeaderEntry[] = [];
 
+    public get length() { return this._items.length; }
+
     public add(header: HeaderIdentifier): HeaderEntry {
-      var value = this._items[header.value];
-      if (!value) {
-        value = new HeaderEntry(header, new HeaderValue(header.valueKind));
-        this._items[header.value] = value;
+      var entry = this.get(header);
+      if (!entry) {
+        entry = new HeaderEntry(header, new HeaderValue(header.valueKind));
+        this._items.push(entry);
       }
-      return value;
+      return entry;
+    }
+
+    public get(header: HeaderIdentifier): HeaderEntry {
+      // TODO(rpaquay): Improve performance of linear search.
+      for (var i = 0; i < this._items.length; i++) {
+        if (this._items[i].identifier.value === header.value) {
+          return this._items[i];
+        }
+      }
+      return null;
     }
 
     public forEach(action: (entry: HeaderEntry) => void): void {
@@ -406,6 +417,70 @@ module Obex {
       new_data.setLength(remaining_length);
       new_data.setData(0, remaining_data);
       this._data = new_data;
+    }
+  }
+
+  export class HeaderListParser {
+    private _littleEndian = false;
+    private _data: DataView;
+    private _offset = 0;
+
+    public constructor(data: DataView) {
+      this._data = data;
+    }
+
+    private fetchUint8(): number {
+      var result = this._data.getUint8(this._offset);
+      this._offset++;
+      return result;
+    }
+
+    private fetchUint16(): number {
+      var result = this._data.getUint16(this._offset, this._littleEndian);
+      this._offset += 2;
+      return result;
+    }
+
+    private fetchUint32(): number {
+      var result = this._data.getUint32(this._offset, this._littleEndian);
+      this._offset += 4;
+      return result;
+    }
+
+    public parse(): HeaderList {
+      var list = new HeaderList();
+      while (this._offset < this._data.byteLength) {
+        var op_code = this.fetchUint8();
+        var id = new HeaderIdentifier(op_code);
+        switch (id.valueKind) {
+          case HeaderValueKind.Int8:
+            var value = this.fetchUint8();
+            list.add(id).value.setInt8(value);
+            break;
+          case HeaderValueKind.Int32:
+            var value = this.fetchUint32();
+            list.add(id).value.setInt32(value);
+            break;
+          case HeaderValueKind.Unicode:
+            var length = this.fetchUint16();
+            var text = "";
+            for (var i = 0; i < length; i++) {
+              var ch = this.fetchUint16();
+              text += String.fromCharCode(ch);
+            }
+            list.add(id).value.setUnicode(text);
+            break;
+          case HeaderValueKind.ByteSequence:
+            var length = this.fetchUint16();
+            var view = new Uint8Array(this._data.buffer, this._data.byteOffset + this._offset, length);
+            this._offset += length;
+            list.add(id).value.setByteSequence(view);
+            break;
+          default:
+            throw new Error("Unsupported value kind.");
+        }
+      }
+      return list;
     }
   }
 }

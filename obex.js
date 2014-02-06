@@ -245,7 +245,7 @@ var Obex;
             configurable: true
         });
 
-        Object.defineProperty(HeaderValue.prototype, "asArrayBuffer", {
+        Object.defineProperty(HeaderValue.prototype, "asUint8Array", {
             get: function () {
                 if (this._kind != 64 /* ByteSequence */)
                     throw new Error("Value must be of ByteSequence kind.");
@@ -301,8 +301,7 @@ var Obex;
                 }
             } else if (this._kind === 64 /* ByteSequence */) {
                 stream.addUint16(this._byteSequence.byteLength);
-                var view = new Uint8Array(this._byteSequence);
-                stream.addData(view);
+                stream.addData(this._byteSequence);
             } else {
                 throw new Error("Invalid value type.");
             }
@@ -338,13 +337,30 @@ var Obex;
         function HeaderList() {
             this._items = [];
         }
+        Object.defineProperty(HeaderList.prototype, "length", {
+            get: function () {
+                return this._items.length;
+            },
+            enumerable: true,
+            configurable: true
+        });
+
         HeaderList.prototype.add = function (header) {
-            var value = this._items[header.value];
-            if (!value) {
-                value = new HeaderEntry(header, new HeaderValue(header.valueKind));
-                this._items[header.value] = value;
+            var entry = this.get(header);
+            if (!entry) {
+                entry = new HeaderEntry(header, new HeaderValue(header.valueKind));
+                this._items.push(entry);
             }
-            return value;
+            return entry;
+        };
+
+        HeaderList.prototype.get = function (header) {
+            for (var i = 0; i < this._items.length; i++) {
+                if (this._items[i].identifier.value === header.value) {
+                    return this._items[i];
+                }
+            }
+            return null;
         };
 
         HeaderList.prototype.forEach = function (action) {
@@ -574,5 +590,68 @@ var Obex;
         return ResponseParser;
     })();
     Obex.ResponseParser = ResponseParser;
+
+    var HeaderListParser = (function () {
+        function HeaderListParser(data) {
+            this._littleEndian = false;
+            this._offset = 0;
+            this._data = data;
+        }
+        HeaderListParser.prototype.fetchUint8 = function () {
+            var result = this._data.getUint8(this._offset);
+            this._offset++;
+            return result;
+        };
+
+        HeaderListParser.prototype.fetchUint16 = function () {
+            var result = this._data.getUint16(this._offset, this._littleEndian);
+            this._offset += 2;
+            return result;
+        };
+
+        HeaderListParser.prototype.fetchUint32 = function () {
+            var result = this._data.getUint32(this._offset, this._littleEndian);
+            this._offset += 4;
+            return result;
+        };
+
+        HeaderListParser.prototype.parse = function () {
+            var list = new HeaderList();
+            while (this._offset < this._data.byteLength) {
+                var op_code = this.fetchUint8();
+                var id = new HeaderIdentifier(op_code);
+                switch (id.valueKind) {
+                    case 128 /* Int8 */:
+                        var value = this.fetchUint8();
+                        list.add(id).value.setInt8(value);
+                        break;
+                    case 192 /* Int32 */:
+                        var value = this.fetchUint32();
+                        list.add(id).value.setInt32(value);
+                        break;
+                    case 0 /* Unicode */:
+                        var length = this.fetchUint16();
+                        var text = "";
+                        for (var i = 0; i < length; i++) {
+                            var ch = this.fetchUint16();
+                            text += String.fromCharCode(ch);
+                        }
+                        list.add(id).value.setUnicode(text);
+                        break;
+                    case 64 /* ByteSequence */:
+                        var length = this.fetchUint16();
+                        var view = new Uint8Array(this._data.buffer, this._data.byteOffset + this._offset, length);
+                        this._offset += length;
+                        list.add(id).value.setByteSequence(view);
+                        break;
+                    default:
+                        throw new Error("Unsupported value kind.");
+                }
+            }
+            return list;
+        };
+        return HeaderListParser;
+    })();
+    Obex.HeaderListParser = HeaderListParser;
 })(Obex || (Obex = {}));
 //# sourceMappingURL=obex.js.map
