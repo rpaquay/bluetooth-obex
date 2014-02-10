@@ -15,8 +15,8 @@ module Bluetooth {
     public get errorMessage(): string { return this._errorMessage; }
 
     private setError(value: string): void {
-      console.log(value)
-    this._errorMessage = value;
+      console.log(value);
+      this._errorMessage = value;
       if (this._errorHandler)
         this._errorHandler();
     }
@@ -75,13 +75,13 @@ module Bluetooth {
         }
 
         if (result.byteLength === 0) {
-          console.log("Nothing received from peer. Polling again in 1000 ms.");
-          window.setTimeout(() => this.readPoll(callback), 1000);
+          //console.log("Nothing received from peer. Polling again in 1000 ms.");
+          window.setTimeout(() => this.readPoll(callback), 10);
           return;
         }
 
-        console.log("Received data from peer.")
-      callback(result);
+        console.log("Received data from peer.");
+        callback(result);
       });
     }
   }

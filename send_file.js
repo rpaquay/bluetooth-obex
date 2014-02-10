@@ -63,6 +63,8 @@ var SendFile;
         var processor = new Bluetooth.SendFileProcessor(requestProcessor, name, contents);
         processor.setErrorHandler(function (message) {
             log("Error sending file: " + message);
+            callback();
+            return;
         });
         var sendFileCallback = function (finished) {
             log("Packet at offset " + processor.fileOffset + " of " + processor.fileLength + " sent to peer device.");
@@ -83,7 +85,7 @@ var SendFile;
             Bluetooth.connectionDispatcher.setHandler(device, profile, function (socket) {
                 sendFileToSocket(socket, fileName, contents, function () {
                     chrome.bluetooth.disconnect({ socket: socket }, function () {
-                        console.log("Socket disconnected!");
+                        log("Socket closed.");
                     });
                 });
             });

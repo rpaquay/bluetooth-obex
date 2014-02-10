@@ -80,10 +80,10 @@ var Bluetooth;
                 }
 
                 if (result.byteLength === 0) {
-                    console.log("Nothing received from peer. Polling again in 1000 ms.");
+                    //console.log("Nothing received from peer. Polling again in 1000 ms.");
                     window.setTimeout(function () {
                         return _this.readPoll(callback);
-                    }, 1000);
+                    }, 10);
                     return;
                 }
 

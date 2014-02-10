@@ -63,6 +63,8 @@ module SendFile {
     var processor = new Bluetooth.SendFileProcessor(requestProcessor, name, contents);
     processor.setErrorHandler((message: string) => {
       log("Error sending file: " + message);
+      callback();
+      return;
     });
     var sendFileCallback = (finished: boolean) => {
       log("Packet at offset " + processor.fileOffset + " of " + processor.fileLength + " sent to peer device.");
@@ -84,7 +86,7 @@ module SendFile {
       Bluetooth.connectionDispatcher.setHandler(device, profile, (socket) => {
         sendFileToSocket(socket, fileName, contents, () => {
           chrome.bluetooth.disconnect({ socket: socket }, () => {
-            console.log("Socket disconnected!");
+            log("Socket closed.");
           });
         });
       });
