@@ -1,5 +1,6 @@
 interface Chrome {
   runtime: Runtime;
+  fileSystem: any;
   bluetooth: Bluetooth.Bluetooth;
 }
 declare var chrome: Chrome;

@@ -34,8 +34,8 @@ var Bluetooth;
             var stream = new Obex.ByteStream();
             request.serialize(stream);
             var buffer = stream.toArrayBuffer();
-            Obex.dumpArrayBuffer(buffer);
 
+            //Obex.dumpArrayBuffer(buffer);
             chrome.bluetooth.write({ socket: this._socket, data: buffer }, function (result) {
                 if (chrome.runtime.lastError) {
                     _this.setError("Error sending packet to peer: " + chrome.runtime.lastError.message);
@@ -94,6 +94,75 @@ var Bluetooth;
         return RequestProcessor;
     })();
     Bluetooth.RequestProcessor = RequestProcessor;
+
+    var SendFileProcessor = (function () {
+        function SendFileProcessor(_processor, _name, _contents) {
+            var _this = this;
+            this._processor = _processor;
+            this._name = _name;
+            this._contents = _contents;
+            this._offset = 0;
+            this._packetSize = 0x2000;
+            this._view = new Obex.ByteArrayView(_contents);
+            _processor.setErrorHandler(function () {
+                _this._errorHandler(_this._processor.errorMessage);
+            });
+        }
+        Object.defineProperty(SendFileProcessor.prototype, "fileOffset", {
+            get: function () {
+                return this._offset;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(SendFileProcessor.prototype, "fileLength", {
+            get: function () {
+                return this._view.byteLength;
+            },
+            enumerable: true,
+            configurable: true
+        });
+
+        SendFileProcessor.prototype.setErrorHandler = function (handler) {
+            this._errorHandler = handler;
+        };
+
+        SendFileProcessor.prototype.sendNextRequest = function (callback) {
+            var _this = this;
+            if (this._offset >= this._contents.byteLength)
+                callback(true);
+
+            var isFirstRequest = (this._offset === 0);
+            var remainingLength = (this._view.byteLength - this._offset);
+            var isFinalRequest = (remainingLength <= this._packetSize);
+
+            var request = new Obex.PutRequestBuilder();
+            request.name = this._name;
+            if (isFirstRequest)
+                request.length = this._view.byteLength;
+            if (isFinalRequest)
+                request.isFinal = true;
+            var packetLength = Math.min(remainingLength, this._packetSize);
+            var view = this._view.subarray(this._offset, this._offset + packetLength);
+            if (isFinalRequest)
+                request.endOfbody = view;
+            else
+                request.body = view;
+
+            this._processor.sendRequest(request, function (response) {
+                if (response.opCode == 32 /* Success */ || response.opCode == 16 /* Continue */) {
+                    _this._offset += packetLength;
+                    callback(isFinalRequest); // Note: Must be last call of function
+                    return;
+                } else {
+                    var message = "Response error: " + response.code.toString(16);
+                    _this._errorHandler(message);
+                }
+            });
+        };
+        return SendFileProcessor;
+    })();
+    Bluetooth.SendFileProcessor = SendFileProcessor;
 
     var BluetoothConnectionDispatcher = (function () {
         function BluetoothConnectionDispatcher() {
