@@ -7,6 +7,7 @@ var __extends = this.__extends || function (d, b) {
     __.prototype = b.prototype;
     d.prototype = new __();
 };
+/// <reference path="core.ts"/>
 var Obex;
 (function (Obex) {
     var LittleEndian = false;
@@ -66,8 +67,6 @@ var Obex;
             configurable: true
         });
 
-        //public get byteOffset(): number { return this._view.byteOffset; }
-        //public get buffer(): ArrayBuffer { return this._view.buffer; }
         ByteArrayView.prototype.setUint8 = function (offset, value) {
             this._view.setUint8(offset, value);
         };
@@ -248,7 +247,7 @@ var Obex;
     })();
     Obex.ByteStream = ByteStream;
 
-    // Headers identifier abstraction + helper functions.
+    // Abstraction of an Obex header identifier instance.
     var HeaderIdentifier = (function () {
         function HeaderIdentifier(value) {
             this.value = value;
@@ -305,6 +304,7 @@ var Obex;
     })(Obex.HeaderValueKind || (Obex.HeaderValueKind = {}));
     var HeaderValueKind = Obex.HeaderValueKind;
 
+    // Well known Obex header identifiers.
     var HeaderIdentifiers = (function () {
         function HeaderIdentifiers() {
         }
@@ -320,6 +320,8 @@ var Obex;
     })();
     Obex.HeaderIdentifiers = HeaderIdentifiers;
 
+    // Abstraction of an Obax Header value, with its kind and internal
+    // represenation.
     var HeaderValue = (function () {
         function HeaderValue(kind) {
             this._kind = kind;
@@ -493,18 +495,6 @@ var Obex;
     })();
     Obex.HeaderList = HeaderList;
 
-    (function (RequestOpCode) {
-        RequestOpCode[RequestOpCode["Connect"] = 0x80] = "Connect";
-        RequestOpCode[RequestOpCode["Disconnect"] = 0x81] = "Disconnect";
-        RequestOpCode[RequestOpCode["Put"] = 0x02] = "Put";
-        RequestOpCode[RequestOpCode["PutFinal"] = 0x82] = "PutFinal";
-        RequestOpCode[RequestOpCode["Get"] = 0x03] = "Get";
-        RequestOpCode[RequestOpCode["GetFinal"] = 0x83] = "GetFinal";
-        RequestOpCode[RequestOpCode["Session"] = 0x87] = "Session";
-        RequestOpCode[RequestOpCode["Abort"] = 0xff] = "Abort";
-    })(Obex.RequestOpCode || (Obex.RequestOpCode = {}));
-    var RequestOpCode = Obex.RequestOpCode;
-
     var HeaderListBuilder = (function () {
         function HeaderListBuilder() {
             this._headerList = new HeaderList();
@@ -620,6 +610,19 @@ var Obex;
     })();
     Obex.HeaderListParser = HeaderListParser;
 
+    (function (RequestOpCode) {
+        RequestOpCode[RequestOpCode["Connect"] = 0x80] = "Connect";
+        RequestOpCode[RequestOpCode["Disconnect"] = 0x81] = "Disconnect";
+        RequestOpCode[RequestOpCode["Put"] = 0x02] = "Put";
+        RequestOpCode[RequestOpCode["PutFinal"] = 0x82] = "PutFinal";
+        RequestOpCode[RequestOpCode["Get"] = 0x03] = "Get";
+        RequestOpCode[RequestOpCode["GetFinal"] = 0x83] = "GetFinal";
+        RequestOpCode[RequestOpCode["Session"] = 0x87] = "Session";
+        RequestOpCode[RequestOpCode["Abort"] = 0xff] = "Abort";
+    })(Obex.RequestOpCode || (Obex.RequestOpCode = {}));
+    var RequestOpCode = Obex.RequestOpCode;
+
+    // Base class for specialized request builders.
     var RequestBuilder = (function () {
         function RequestBuilder() {
             this._headerList = new HeaderListBuilder();
@@ -672,6 +675,7 @@ var Obex;
     })();
     Obex.RequestBuilder = RequestBuilder;
 
+    // Builder for a CONNECT Obex request.
     var ConnectRequestBuilder = (function (_super) {
         __extends(ConnectRequestBuilder, _super);
         function ConnectRequestBuilder() {
@@ -737,6 +741,7 @@ var Obex;
     })(RequestBuilder);
     Obex.ConnectRequestBuilder = ConnectRequestBuilder;
 
+    // Builder for a DISCONNECT Obex request.
     var DisconnectRequestBuilder = (function (_super) {
         __extends(DisconnectRequestBuilder, _super);
         function DisconnectRequestBuilder() {
@@ -747,6 +752,7 @@ var Obex;
     })(RequestBuilder);
     Obex.DisconnectRequestBuilder = DisconnectRequestBuilder;
 
+    // Builder for a PUT Obex request.
     var PutRequestBuilder = (function (_super) {
         __extends(PutRequestBuilder, _super);
         function PutRequestBuilder() {
@@ -836,134 +842,141 @@ var Obex;
     })(RequestBuilder);
     Obex.PutRequestBuilder = PutRequestBuilder;
 
-    (function (ResponseCode) {
-        ResponseCode[ResponseCode["Reserved"] = 0x00] = "Reserved";
-        ResponseCode[ResponseCode["Continue"] = 0x10] = "Continue";
-        ResponseCode[ResponseCode["Success"] = 0x20] = "Success";
-        ResponseCode[ResponseCode["Created"] = 0x21] = "Created";
+    (function (ResponseOpCode) {
+        ResponseOpCode[ResponseOpCode["Reserved"] = 0x00] = "Reserved";
+        ResponseOpCode[ResponseOpCode["Continue"] = 0x10] = "Continue";
+        ResponseOpCode[ResponseOpCode["Success"] = 0x20] = "Success";
+        ResponseOpCode[ResponseOpCode["Created"] = 0x21] = "Created";
 
-        ResponseCode[ResponseCode["MultipleChoice"] = 0x30] = "MultipleChoice";
-    })(Obex.ResponseCode || (Obex.ResponseCode = {}));
-    var ResponseCode = Obex.ResponseCode;
+        ResponseOpCode[ResponseOpCode["MultipleChoice"] = 0x30] = "MultipleChoice";
+    })(Obex.ResponseOpCode || (Obex.ResponseOpCode = {}));
+    var ResponseOpCode = Obex.ResponseOpCode;
 
-    var Response = (function () {
-        function Response(data) {
-            this._data = data;
-            this._responseData = data.subarray(3); // Skip opcode and length
+    //Representation of an Obex packet (request or response).
+    var Packet = (function () {
+        function Packet(packetData) {
+            this._packetData = packetData;
+            this._data = packetData.subarray(3); // Skip opcode and length
         }
-        Object.defineProperty(Response.prototype, "opCode", {
+        Object.defineProperty(Packet.prototype, "code", {
             get: function () {
-                return this._data.getUint8(0);
+                return this._packetData.getUint8(0);
             },
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(Response.prototype, "isFinal", {
+        Object.defineProperty(Packet.prototype, "opCode", {
             get: function () {
-                return (this.opCode & 0x80) !== 0;
+                return this.code & 0x7f;
             },
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(Response.prototype, "code", {
+        Object.defineProperty(Packet.prototype, "isFinal", {
             get: function () {
-                return this.opCode & 0x7f;
+                return (this.code & 0x80) !== 0;
             },
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(Response.prototype, "length", {
+        Object.defineProperty(Packet.prototype, "length", {
             get: function () {
-                return this._data.getUint16(1);
+                return this._packetData.getUint16(1);
             },
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(Response.prototype, "data", {
+        Object.defineProperty(Packet.prototype, "data", {
             get: function () {
-                return this._responseData;
+                return this._data;
             },
             enumerable: true,
             configurable: true
         });
-        return Response;
+        return Packet;
     })();
-    Obex.Response = Response;
+    Obex.Packet = Packet;
 
-    var ResponseParser = (function () {
-        function ResponseParser() {
-            this._data = new GrowableBuffer();
+    // Processes a series of byte sequences, chunks it into Obex packets,
+    // and calls |handler| for each full packet received.
+    var PacketParser = (function () {
+        function PacketParser() {
+            this._buffer = new GrowableBuffer();
+            this._handler = null;
         }
-        ResponseParser.prototype.addData = function (data) {
+        PacketParser.prototype.setHandler = function (value) {
+            this._handler = value;
+        };
+
+        PacketParser.prototype.addData = function (data) {
             // Add |data| at end of array.
-            var offset = this._data.length;
-            this._data.setLength(this._data.length + data.byteLength);
-            this._data.setData(offset, data);
+            var offset = this._buffer.length;
+            this._buffer.setLength(this._buffer.length + data.byteLength);
+            this._buffer.setData(offset, data);
 
             // Parse data to figure out if we have a complete response.
             this.parseData();
         };
 
-        ResponseParser.prototype.setHandler = function (value) {
-            this._onResponse = value;
-        };
-
-        ResponseParser.prototype.parseData = function () {
-            if (this._data.length < 3)
+        PacketParser.prototype.parseData = function () {
+            if (this._buffer.length < 3)
                 return;
 
-            var response = new Response(this._data.toByteArrayView());
-            var responseLength = response.length;
-            if (responseLength > this._data.length)
+            var packet = new Packet(this._buffer.toByteArrayView());
+            var packetLength = packet.length;
+
+            // If we haven't receive all the packet data yet, return.
+            if (this._buffer.length < packetLength)
                 return;
-            if (responseLength <= this._data.length) {
-                response = new Response(this._data.toByteArrayView().subarray(0, responseLength));
-            }
-            this.flushResponse(responseLength);
-            this._onResponse(response);
+
+            // Create full packet and flush it from buffer.
+            packet = new Packet(this._buffer.toByteArrayView().subarray(0, packetLength));
+            this.flushPacket(packetLength);
+            this._handler(packet);
         };
 
-        ResponseParser.prototype.flushResponse = function (responseLength) {
-            var remaining_length = this._data.length - responseLength;
-            var remaining_data = this._data.toByteArrayView().subarray(responseLength, this._data.length);
+        PacketParser.prototype.flushPacket = function (packetLength) {
+            var remaining_length = this._buffer.length - packetLength;
+            var remaining_data = this._buffer.toByteArrayView().subarray(packetLength, this._buffer.length);
             var new_data = new GrowableBuffer();
             new_data.setLength(remaining_length);
             new_data.setData(0, remaining_data);
-            this._data = new_data;
+            this._buffer = new_data;
         };
-        return ResponseParser;
+        return PacketParser;
     })();
-    Obex.ResponseParser = ResponseParser;
+    Obex.PacketParser = PacketParser;
 
+    // Representation of an Obex CONNECT response packet.
     var ConnectResponse = (function () {
-        function ConnectResponse(_response) {
-            this._response = _response;
+        function ConnectResponse(_packet) {
+            this._packet = _packet;
             this._headerList = null;
         }
-        Object.defineProperty(ConnectResponse.prototype, "code", {
+        Object.defineProperty(ConnectResponse.prototype, "opCode", {
             get: function () {
-                return this._response.code;
+                return this._packet.opCode;
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(ConnectResponse.prototype, "obexVersion", {
             get: function () {
-                return this._response.data.getUint8(0);
+                return this._packet.data.getUint8(0);
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(ConnectResponse.prototype, "flags", {
             get: function () {
-                return this._response.data.getUint8(1);
+                return this._packet.data.getUint8(1);
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(ConnectResponse.prototype, "maxPacketSize", {
             get: function () {
-                return this._response.data.getUint16(2);
+                return this._packet.data.getUint16(2);
             },
             enumerable: true,
             configurable: true
@@ -972,7 +985,7 @@ var Obex;
             get: function () {
                 if (this._headerList === null) {
                     // 4 = 1 (version) + 1 (flags) + 2 (maxPacketSize)
-                    var view = this._response.data.subarray(4);
+                    var view = this._packet.data.subarray(4);
                     var parser = new HeaderListParser(view);
                     this._headerList = parser.parse();
                 }

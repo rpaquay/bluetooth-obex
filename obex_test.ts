@@ -1,3 +1,4 @@
+/// <reference path="core.ts"/>
 /// <reference path="obex.ts"/>
 
 module Assert {
@@ -59,18 +60,61 @@ module ObexTests {
     //var y2 = new DataView(x, 0, 0); // throws!
   });
 
-  Tests.run("Headers", () => {
+  Tests.run("StringMap_Empty", () => {
     // Prepare
+    var map = new Core.StringMap();
     // Act
     // Assert
-    Assert.isTrue(Obex.HeaderIdentifiers.Name.isUnicode);
-    Assert.isFalse(Obex.HeaderIdentifiers.Name.isByteSequence);
-    Assert.isFalse(Obex.HeaderIdentifiers.Count.isUnicode);
-    Assert.isTrue(Obex.HeaderIdentifiers.Count.isInt32);
-    Assert.isFalse(Obex.HeaderIdentifiers.Length.isUnicode);
-    Assert.isTrue(Obex.HeaderIdentifiers.Length.isInt32);
-    Assert.isFalse(Obex.HeaderIdentifiers.Type.isUnicode);
-    Assert.isTrue(Obex.HeaderIdentifiers.Type.isByteSequence);
+    Assert.isEqual(0, map.size);
+    Assert.isEqual("undefined", typeof map.get("key"));
+    Assert.isFalse(map.has("key"));
+    Assert.isFalse(map.delete("key"));
+  });
+
+  Tests.run("StringMap_Set", () => {
+    // Prepare
+    var map = new Core.StringMap();
+
+    // Act
+    map.set("key", 5);
+    map.set("key2", "test");
+
+    // Assert
+    Assert.isEqual(2, map.size);
+    Assert.isEqual(5, map.get("key"));
+    Assert.isEqual("test", map.get("key2"));
+    Assert.isTrue(map.has("key"));
+    Assert.isTrue(map.has("key2"));
+    Assert.isTrue(map.delete("key"));
+    Assert.isTrue(map.delete("key2"));
+  });
+
+  Tests.run("StringMap_forEach", () => {
+    // Prepare
+    var map = new Core.StringMap();
+    map.set("key", 5);
+    map.set("key2", "test");
+
+    // Act
+    var count = 0;
+    var seenKey = 0;
+    var seenKey2 = 0;
+    var seen5 = 0;
+    var seenText = 0;
+    map.forEach((value, index, map) => {
+      if (index === "key") seenKey++;
+      if (index === "key2") seenKey2++;
+      if (value === 5) seen5++;
+      if (value === "test") seenText++;
+      count++;
+    });
+
+    // Assert
+    Assert.isEqual(2, count);
+    Assert.isEqual(1, seenKey);
+    Assert.isEqual(1, seenKey2);
+    Assert.isEqual(1, seen5);
+    Assert.isEqual(1, seenText);
   });
 
   Tests.run("ByteArrayView_emtpy", () => {
@@ -193,6 +237,20 @@ module ObexTests {
     }
   });
 
+  Tests.run("Headers", () => {
+    // Prepare
+    // Act
+    // Assert
+    Assert.isTrue(Obex.HeaderIdentifiers.Name.isUnicode);
+    Assert.isFalse(Obex.HeaderIdentifiers.Name.isByteSequence);
+    Assert.isFalse(Obex.HeaderIdentifiers.Count.isUnicode);
+    Assert.isTrue(Obex.HeaderIdentifiers.Count.isInt32);
+    Assert.isFalse(Obex.HeaderIdentifiers.Length.isUnicode);
+    Assert.isTrue(Obex.HeaderIdentifiers.Length.isInt32);
+    Assert.isFalse(Obex.HeaderIdentifiers.Type.isUnicode);
+    Assert.isTrue(Obex.HeaderIdentifiers.Type.isByteSequence);
+  });
+
   Tests.run("HeaderListBuilder1", () => {
     // Prepare
     var builder = new Obex.HeaderListBuilder();
@@ -244,94 +302,6 @@ module ObexTests {
     Assert.isEqual(126, buffer.byteLength);
   });
 
-  Tests.run("ConnectRequestBuilder", () => {
-    // Prepare
-    var request = new Obex.ConnectRequestBuilder();
-    request.maxPacketSize = 8 * 1024;
-    request.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(4);
-    request.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(0xf483);
-
-    // Act
-    var stream = new Obex.ByteStream();
-    request.serialize(stream);
-    var buffer = stream.toArrayBuffer();
-
-    // Assert
-    Assert.isNotNull(buffer);
-    Assert.isEqual(17, buffer.byteLength);
-  });
-
-  Tests.run("ResponseParser1", () => {
-    // Prepare
-    var dataStream = new Obex.ByteStream();
-    dataStream.addUint8(Obex.ResponseCode.Success);
-    dataStream.addUint16(10); // length
-    for (var i = 0; i < 7; i++) {
-      dataStream.addUint8(i);
-    }
-
-    var parser = new Obex.ResponseParser();
-    var responseCount = 0;
-    var lastResponse: Obex.Response = null;
-    parser.setHandler(response => {
-      lastResponse = response;
-      responseCount++;
-    });
-
-    // Act
-    parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 3));
-    parser.addData(dataStream.buffer.toByteArrayView().subarray(3, 10));
-
-    // Assert
-    Assert.isEqual(1, responseCount);
-    Assert.isNotNull(lastResponse);
-    Assert.isEqual(Obex.ResponseCode.Success, lastResponse.code);
-    Assert.isEqual(10, lastResponse.length);
-    Assert.isEqual(7, lastResponse.data.byteLength);
-  });
-
-  Tests.run("ResponseParser2", () => {
-    // Prepare
-    var dataStream = new Obex.ByteStream();
-    dataStream.addUint8(Obex.ResponseCode.Success);
-    dataStream.addUint16(10); // length
-    for (var i = 0; i < 7; i++) {
-      dataStream.addUint8(i);
-    }
-    dataStream.addUint8(Obex.ResponseCode.Created);
-    dataStream.addUint16(4); // length
-    dataStream.addUint8(0xa0);
-
-    var parser = new Obex.ResponseParser();
-    var responseCount = 0;
-    var lastResponse: Obex.Response = null;
-    parser.setHandler(response => {
-      lastResponse = response;
-      responseCount++;
-    });
-
-    // Act
-    parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 13));
-
-    // Assert
-    Assert.isEqual(1, responseCount);
-    Assert.isNotNull(lastResponse);
-    Assert.isEqual(Obex.ResponseCode.Success, lastResponse.code);
-    Assert.isEqual(10, lastResponse.length);
-    Assert.isEqual(7, lastResponse.data.byteLength);
-    lastResponse = null;
-
-    // Act
-    parser.addData(dataStream.buffer.toByteArrayView().subarray(13, 14));
-
-    // Assert
-    Assert.isEqual(2, responseCount);
-    Assert.isNotNull(lastResponse);
-    Assert.isEqual(Obex.ResponseCode.Created, lastResponse.code);
-    Assert.isEqual(4, lastResponse.length);
-    Assert.isEqual(1, lastResponse.data.byteLength);
-  });
-
   Tests.run("HeaderParser", () => {
     // Prepare
     var builder = new Obex.HeaderListBuilder();
@@ -363,6 +333,91 @@ module ObexTests {
     Assert.isEqual(100, list.get(Obex.HeaderIdentifiers.Body).value.asByteArrayView.byteLength);
   });
 
-  function foo(x: number, y = x) {
-  }
+  Tests.run("ConnectRequestBuilder", () => {
+    // Prepare
+    var request = new Obex.ConnectRequestBuilder();
+    request.maxPacketSize = 8 * 1024;
+    request.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(4);
+    request.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(0xf483);
+
+    // Act
+    var stream = new Obex.ByteStream();
+    request.serialize(stream);
+    var buffer = stream.toArrayBuffer();
+
+    // Assert
+    Assert.isNotNull(buffer);
+    Assert.isEqual(17, buffer.byteLength);
+  });
+
+  Tests.run("PacketParser1", () => {
+    // Prepare
+    var dataStream = new Obex.ByteStream();
+    dataStream.addUint8(Obex.ResponseOpCode.Success);
+    dataStream.addUint16(10); // length
+    for (var i = 0; i < 7; i++) {
+      dataStream.addUint8(i);
+    }
+
+    var parser = new Obex.PacketParser();
+    var responseCount = 0;
+    var lastResponse: Obex.Packet = null;
+    parser.setHandler(response => {
+      lastResponse = response;
+      responseCount++;
+    });
+
+    // Act
+    parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 3));
+    parser.addData(dataStream.buffer.toByteArrayView().subarray(3, 10));
+
+    // Assert
+    Assert.isEqual(1, responseCount);
+    Assert.isNotNull(lastResponse);
+    Assert.isEqual(Obex.ResponseOpCode.Success, lastResponse.opCode);
+    Assert.isEqual(10, lastResponse.length);
+    Assert.isEqual(7, lastResponse.data.byteLength);
+  });
+
+  Tests.run("PacketParser2", () => {
+    // Prepare
+    var dataStream = new Obex.ByteStream();
+    dataStream.addUint8(Obex.ResponseOpCode.Success);
+    dataStream.addUint16(10); // length
+    for (var i = 0; i < 7; i++) {
+      dataStream.addUint8(i);
+    }
+    dataStream.addUint8(Obex.ResponseOpCode.Created);
+    dataStream.addUint16(4); // length
+    dataStream.addUint8(0xa0);
+
+    var parser = new Obex.PacketParser();
+    var responseCount = 0;
+    var lastResponse: Obex.Packet = null;
+    parser.setHandler(response => {
+      lastResponse = response;
+      responseCount++;
+    });
+
+    // Act
+    parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 13));
+
+    // Assert
+    Assert.isEqual(1, responseCount);
+    Assert.isNotNull(lastResponse);
+    Assert.isEqual(Obex.ResponseOpCode.Success, lastResponse.opCode);
+    Assert.isEqual(10, lastResponse.length);
+    Assert.isEqual(7, lastResponse.data.byteLength);
+    lastResponse = null;
+
+    // Act
+    parser.addData(dataStream.buffer.toByteArrayView().subarray(13, 14));
+
+    // Assert
+    Assert.isEqual(2, responseCount);
+    Assert.isNotNull(lastResponse);
+    Assert.isEqual(Obex.ResponseOpCode.Created, lastResponse.opCode);
+    Assert.isEqual(4, lastResponse.length);
+    Assert.isEqual(1, lastResponse.data.byteLength);
+  });
 }

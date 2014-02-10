@@ -1,5 +1,7 @@
 /// <reference path="chrome.d.ts"/>
+/// <reference path="core.ts"/>
 /// <reference path="obex.ts"/>
+/// <reference path="bluetooth.ts"/>
 
 // See https://www.bluetooth.org/en-us/specification/assigned-numbers/service-discovery
 var kOBEXObjectPush = '00001105-0000-1000-8000-00805f9b34fb';
@@ -12,21 +14,6 @@ function log(msg) {
   var l = document.getElementById('log');
   if (l) {
     l.innerText += msg_str + '\n';
-  }
-}
-
-var connectCallback = [];
-function OnConnection(socket: Bluetooth.Socket) {
-  try {
-    log("OnConnection: socket id=" + socket.id + ", device name=" + socket.device.name + ", profile id=" + socket.profile.uuid);
-    var uuid = socket.profile.uuid.toLowerCase();
-    if (connectCallback[uuid]) {
-      connectCallback[uuid](socket);
-    }
-  }
-  catch (e) {
-    console.error(e);
-    throw e;
   }
 }
 
@@ -66,138 +53,78 @@ function GetDeviceServicesClick(device) {
   })
 }
 
-function readPoll(socket: Bluetooth.Socket, callback: (data: ArrayBuffer) => void) {
-  chrome.bluetooth.read({ socket: socket }, (result?: ArrayBuffer) => {
-    if (chrome.runtime.lastError) {
-      log("Error reading packet from peer: " + chrome.runtime.lastError.message);
-      return;
-    }
-
-    if (result.byteLength === 0) {
-      console.log("Nothing received from peer. Polling again in 1000 ms.");
-      window.setTimeout(() => readPoll(socket, callback), 1000);
-      return;
-    }
-
-    console.log("Received packet from peer.")
-    Obex.dumpArrayBuffer(result);
-    callback(result);
-  });
-}
-
-function sendPutRequest(socket: Bluetooth.Socket, callback: (socket: Bluetooth.Socket, response: Obex.Response) => void) {
-  var builder = new Obex.PutRequestBuilder();
-  builder.isFinal = true;
-  builder.length = 3;
-  builder.name = "hello.txt";
-  builder.body = new Obex.ByteArrayView(new ArrayBuffer(3));
-  var view = builder.body;
+function sendPutRequest(socket: Bluetooth.Socket, callback: (socket: Bluetooth.Socket, response: Obex.Packet) => void) {
+  var request = new Obex.PutRequestBuilder();
+  request.isFinal = true;
+  request.length = 3;
+  request.name = "hello.txt";
+  request.body = new Obex.ByteArrayView(new ArrayBuffer(3));
+  var view = request.body;
   view.setUint8(0, 'a'.charCodeAt(0));
   view.setUint8(1, 'b'.charCodeAt(0));
   view.setUint8(2, 'c'.charCodeAt(0));
 
-  var stream = new Obex.ByteStream();
-  builder.serialize(stream);
-  var buffer = stream.toArrayBuffer();
-  Obex.dumpArrayBuffer(buffer);
+  var requestProcessor = new Bluetooth.RequestProcessor(socket);
+  requestProcessor.sendRequest(request, response => {
+    console.log("response.code=" + response.opCode);
+    console.log("response.isFinal=" + response.isFinal);
 
-  chrome.bluetooth.write({ socket: socket, data: buffer }, (result: number) => {
-    if (chrome.runtime.lastError) {
-      log("Error sending packet to peer: " + chrome.runtime.lastError.message);
-      return;
-    }
-    console.log("PUT packet send to peer (byte length=" + result + ").");
-
-    readPoll(socket, result => {
-      var parser = new Obex.ResponseParser();
-      parser.setHandler(response => {
-        console.log("response.code=" + response.code);
-        console.log("response.isFinal=" + response.isFinal);
-
-        var headers = new Obex.HeaderListParser(response.data).parse();
-        console.log(headers);
-        callback(socket, response);
-      });
-      parser.addData(new Obex.ByteArrayView(result));
-    });
+    var headers = new Obex.HeaderListParser(response.data).parse();
+    console.log(headers);
+    callback(socket, response);
   });
 }
 
 function sendConnectRequest(socket: Bluetooth.Socket, callback: (socket: Bluetooth.Socket, response: Obex.ConnectResponse) => void) {
-  var builder = new Obex.ConnectRequestBuilder();
-  builder.count = 1;
-  builder.length = 100;
+  var request = new Obex.ConnectRequestBuilder();
+  request.count = 1;
+  request.length = 100;
 
-  var stream = new Obex.ByteStream();
-  builder.serialize(stream);
-  var buffer = stream.toArrayBuffer();
-  Obex.dumpArrayBuffer(buffer);
-
-  chrome.bluetooth.write({ socket: socket, data: buffer }, (result: number) => {
-    if (chrome.runtime.lastError) {
-      log("Error sending packet to peer: " + chrome.runtime.lastError.message);
-      return;
-    }
-    console.log("CONNECT packet send to peer (result code=" + result + ").");
-
-    readPoll(socket, result => {
-      var parser = new Obex.ResponseParser();
-      parser.setHandler(response => {
-        console.log("response.code=" + response.code);
-        console.log("response.isFinal=" + response.isFinal);
-        var connectResponse = new Obex.ConnectResponse(response);
-
-        console.log(connectResponse);
-        callback(socket, connectResponse);
-      });
-      parser.addData(new Obex.ByteArrayView(result));
-    });
+  var requestProcessor = new Bluetooth.RequestProcessor(socket);
+  requestProcessor.sendRequest(request, response => {
+    console.log("response.code=" + response.opCode);
+    console.log("response.isFinal=" + response.isFinal);
+    var connectResponse = new Obex.ConnectResponse(response);
+    console.log(connectResponse);
+    callback(socket, connectResponse);
   });
 }
 
-function sendDisconnectRequest(socket: Bluetooth.Socket, response: Obex.ConnectResponse): void {
-  var builder = new Obex.DisconnectRequestBuilder();
+function sendDisconnectRequest(socket: Bluetooth.Socket, callback: (socket: Bluetooth.Socket, response: Obex.Packet) => void): void {
+  var request = new Obex.DisconnectRequestBuilder();
 
-  var stream = new Obex.ByteStream();
-  builder.serialize(stream);
-  var buffer = stream.toArrayBuffer();
-  Obex.dumpArrayBuffer(buffer);
-
-  chrome.bluetooth.write({ socket: socket, data: buffer }, (result: number) => {
-    if (chrome.runtime.lastError) {
-      log("Error sending packet to peer: " + chrome.runtime.lastError.message);
-      return;
-    }
-    console.log("DISCONNECT packet send to peer (result code=" + result + ").");
-
-    readPoll(socket, result => {
-      var parser = new Obex.ResponseParser();
-      parser.setHandler(response => {
-        console.log("response.code=" + response.code);
-        console.log("response.isFinal=" + response.isFinal);
-        console.log(response);
-      });
-      parser.addData(new Obex.ByteArrayView(result));
-    });
+  var requestProcessor = new Bluetooth.RequestProcessor(socket);
+  requestProcessor.sendRequest(request, response => {
+    console.log("response.code=" + response.opCode);
+    console.log("response.isFinal=" + response.isFinal);
+    console.log(response);
+    callback(socket, response);
   });
+}
+
+function processObjectPushConnection(socket: Bluetooth.Socket): void {
+  console.log("Connection opened from peer client.");
+
+//  var parser = new Obex.PacketParser();
+//  parser.setHandler(packet => {
+//  });
+
+//  readPoll(socket, (data) => {
+//    parser.addData(new Obex.ByteArrayView(data));
+//  });
 }
 
 function ObjectPushClick(device) {
   var uuid = kOBEXObjectPush.toLowerCase();
   var profile = { uuid: uuid };
 
-  //connectCallback[uuid] = (socket) => {
-  //  sendConnectRequest(socket, (socket, response) => {
-  //    sendDisconnectRequest(socket, response);
-  //  });
-  //};
-  connectCallback[uuid] = (socket) => {
+  Bluetooth.connectionDispatcher.setHandler(device, profile, (socket) => {
     sendPutRequest(socket, (socket, response) => {
       chrome.bluetooth.disconnect({ socket: socket }, () => {
-        console.log("Socket closed!");
+        console.log("Socket disconnected!");
       });
     });
-  };
+  });
 
   chrome.bluetooth.connect({ device: device, profile: profile }, function () {
     if (chrome.runtime.lastError)
@@ -226,11 +153,11 @@ function ListDevicesClick() {
       row.appendChild(td);
 
       var td = document.createElement("td");
-      td.innerText = device.paired;
+      td.innerText = device.paired.toString();
       row.appendChild(td);
 
       var td = document.createElement("td");
-      td.innerText = device.connected;
+      td.innerText = device.connected.toString();
       row.appendChild(td);
 
       // Actions
@@ -253,8 +180,8 @@ function ListDevicesClick() {
       td.appendChild(objectPushAction);
     }
   },
-  function () {
-    log('Done getting devices.')
+    function () {
+      log('Done getting devices.')
   });
 }
 
@@ -351,8 +278,15 @@ function RegisterObjectPushProfile() {
   chrome.bluetooth.addProfile(profile, function () {
     if (chrome.runtime.lastError)
       log("Error registering profile: " + chrome.runtime.lastError.message);
-    else
+    else {
       log("Profile successfully registed.");
+      var getDeviceCallback = (device: Bluetooth.Device) => {
+        Bluetooth.connectionDispatcher.setHandler(device, profile, (socket: Bluetooth.Socket) => {
+          processObjectPushConnection(socket);
+        });
+      };
+      chrome.bluetooth.getDevices({ deviceCallback: getDeviceCallback }, () => { });
+    }
   });
 }
 
@@ -379,9 +313,8 @@ function Setup() {
   document.getElementById('register-object-push-profile').onclick = RegisterObjectPushProfile;
   document.getElementById('unregister-object-push-profile').onclick = UnregisterObjectPushProfile;
   chrome.bluetooth.onAdapterStateChanged.addListener(OnAdapterStateChanged);
-  chrome.bluetooth.onConnection.addListener(OnConnection);
 }
 
-window.onload = function() {
+window.onload = function () {
   Setup();
 }

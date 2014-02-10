@@ -1,3 +1,59 @@
+var Core;
+(function (Core) {
+    var StringMap = (function () {
+        function StringMap() {
+            this._container = Object.create(null);
+            this._size = 0;
+        }
+        StringMap.prototype.clear = function () {
+            this._container = Object.create(null);
+            this._size = 0;
+        };
+
+        StringMap.prototype.delete = function (key) {
+            var value = this._container[key];
+            if (typeof value === "undefined")
+                return false;
+            delete this._container[key];
+            this._size--;
+            return true;
+        };
+
+        StringMap.prototype.forEach = function (callbackfn, thisArg) {
+            for (var key in this._container) {
+                callbackfn(this._container[key], key, this);
+            }
+        };
+
+        StringMap.prototype.get = function (key) {
+            return this._container[key];
+        };
+
+        StringMap.prototype.has = function (key) {
+            var value = this._container[key];
+            return (typeof value !== "undefined");
+        };
+
+        StringMap.prototype.set = function (key, value) {
+            var previous = this._container[key];
+            this._container[key] = value;
+            if (typeof previous === "undefined") {
+                this._size++;
+            }
+            return this;
+        };
+
+        Object.defineProperty(StringMap.prototype, "size", {
+            get: function () {
+                return this._size;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        return StringMap;
+    })();
+    Core.StringMap = StringMap;
+})(Core || (Core = {}));
 // Obex component: Obex is a transport protocol conceptually similar to HTTP.
 // It is a request/response message protocol where each request/response
 // message is a set of headers followed by a body.
@@ -7,6 +63,7 @@ var __extends = this.__extends || function (d, b) {
     __.prototype = b.prototype;
     d.prototype = new __();
 };
+/// <reference path="core.ts"/>
 var Obex;
 (function (Obex) {
     var LittleEndian = false;
@@ -66,8 +123,6 @@ var Obex;
             configurable: true
         });
 
-        //public get byteOffset(): number { return this._view.byteOffset; }
-        //public get buffer(): ArrayBuffer { return this._view.buffer; }
         ByteArrayView.prototype.setUint8 = function (offset, value) {
             this._view.setUint8(offset, value);
         };
@@ -248,7 +303,7 @@ var Obex;
     })();
     Obex.ByteStream = ByteStream;
 
-    // Headers identifier abstraction + helper functions.
+    // Abstraction of an Obex header identifier instance.
     var HeaderIdentifier = (function () {
         function HeaderIdentifier(value) {
             this.value = value;
@@ -305,6 +360,7 @@ var Obex;
     })(Obex.HeaderValueKind || (Obex.HeaderValueKind = {}));
     var HeaderValueKind = Obex.HeaderValueKind;
 
+    // Well known Obex header identifiers.
     var HeaderIdentifiers = (function () {
         function HeaderIdentifiers() {
         }
@@ -320,6 +376,8 @@ var Obex;
     })();
     Obex.HeaderIdentifiers = HeaderIdentifiers;
 
+    // Abstraction of an Obax Header value, with its kind and internal
+    // represenation.
     var HeaderValue = (function () {
         function HeaderValue(kind) {
             this._kind = kind;
@@ -493,18 +551,6 @@ var Obex;
     })();
     Obex.HeaderList = HeaderList;
 
-    (function (RequestOpCode) {
-        RequestOpCode[RequestOpCode["Connect"] = 0x80] = "Connect";
-        RequestOpCode[RequestOpCode["Disconnect"] = 0x81] = "Disconnect";
-        RequestOpCode[RequestOpCode["Put"] = 0x02] = "Put";
-        RequestOpCode[RequestOpCode["PutFinal"] = 0x82] = "PutFinal";
-        RequestOpCode[RequestOpCode["Get"] = 0x03] = "Get";
-        RequestOpCode[RequestOpCode["GetFinal"] = 0x83] = "GetFinal";
-        RequestOpCode[RequestOpCode["Session"] = 0x87] = "Session";
-        RequestOpCode[RequestOpCode["Abort"] = 0xff] = "Abort";
-    })(Obex.RequestOpCode || (Obex.RequestOpCode = {}));
-    var RequestOpCode = Obex.RequestOpCode;
-
     var HeaderListBuilder = (function () {
         function HeaderListBuilder() {
             this._headerList = new HeaderList();
@@ -620,6 +666,19 @@ var Obex;
     })();
     Obex.HeaderListParser = HeaderListParser;
 
+    (function (RequestOpCode) {
+        RequestOpCode[RequestOpCode["Connect"] = 0x80] = "Connect";
+        RequestOpCode[RequestOpCode["Disconnect"] = 0x81] = "Disconnect";
+        RequestOpCode[RequestOpCode["Put"] = 0x02] = "Put";
+        RequestOpCode[RequestOpCode["PutFinal"] = 0x82] = "PutFinal";
+        RequestOpCode[RequestOpCode["Get"] = 0x03] = "Get";
+        RequestOpCode[RequestOpCode["GetFinal"] = 0x83] = "GetFinal";
+        RequestOpCode[RequestOpCode["Session"] = 0x87] = "Session";
+        RequestOpCode[RequestOpCode["Abort"] = 0xff] = "Abort";
+    })(Obex.RequestOpCode || (Obex.RequestOpCode = {}));
+    var RequestOpCode = Obex.RequestOpCode;
+
+    // Base class for specialized request builders.
     var RequestBuilder = (function () {
         function RequestBuilder() {
             this._headerList = new HeaderListBuilder();
@@ -672,6 +731,7 @@ var Obex;
     })();
     Obex.RequestBuilder = RequestBuilder;
 
+    // Builder for a CONNECT Obex request.
     var ConnectRequestBuilder = (function (_super) {
         __extends(ConnectRequestBuilder, _super);
         function ConnectRequestBuilder() {
@@ -737,6 +797,7 @@ var Obex;
     })(RequestBuilder);
     Obex.ConnectRequestBuilder = ConnectRequestBuilder;
 
+    // Builder for a DISCONNECT Obex request.
     var DisconnectRequestBuilder = (function (_super) {
         __extends(DisconnectRequestBuilder, _super);
         function DisconnectRequestBuilder() {
@@ -747,6 +808,7 @@ var Obex;
     })(RequestBuilder);
     Obex.DisconnectRequestBuilder = DisconnectRequestBuilder;
 
+    // Builder for a PUT Obex request.
     var PutRequestBuilder = (function (_super) {
         __extends(PutRequestBuilder, _super);
         function PutRequestBuilder() {
@@ -836,134 +898,141 @@ var Obex;
     })(RequestBuilder);
     Obex.PutRequestBuilder = PutRequestBuilder;
 
-    (function (ResponseCode) {
-        ResponseCode[ResponseCode["Reserved"] = 0x00] = "Reserved";
-        ResponseCode[ResponseCode["Continue"] = 0x10] = "Continue";
-        ResponseCode[ResponseCode["Success"] = 0x20] = "Success";
-        ResponseCode[ResponseCode["Created"] = 0x21] = "Created";
+    (function (ResponseOpCode) {
+        ResponseOpCode[ResponseOpCode["Reserved"] = 0x00] = "Reserved";
+        ResponseOpCode[ResponseOpCode["Continue"] = 0x10] = "Continue";
+        ResponseOpCode[ResponseOpCode["Success"] = 0x20] = "Success";
+        ResponseOpCode[ResponseOpCode["Created"] = 0x21] = "Created";
 
-        ResponseCode[ResponseCode["MultipleChoice"] = 0x30] = "MultipleChoice";
-    })(Obex.ResponseCode || (Obex.ResponseCode = {}));
-    var ResponseCode = Obex.ResponseCode;
+        ResponseOpCode[ResponseOpCode["MultipleChoice"] = 0x30] = "MultipleChoice";
+    })(Obex.ResponseOpCode || (Obex.ResponseOpCode = {}));
+    var ResponseOpCode = Obex.ResponseOpCode;
 
-    var Response = (function () {
-        function Response(data) {
-            this._data = data;
-            this._responseData = data.subarray(3); // Skip opcode and length
+    //Representation of an Obex packet (request or response).
+    var Packet = (function () {
+        function Packet(packetData) {
+            this._packetData = packetData;
+            this._data = packetData.subarray(3); // Skip opcode and length
         }
-        Object.defineProperty(Response.prototype, "opCode", {
+        Object.defineProperty(Packet.prototype, "code", {
             get: function () {
-                return this._data.getUint8(0);
+                return this._packetData.getUint8(0);
             },
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(Response.prototype, "isFinal", {
+        Object.defineProperty(Packet.prototype, "opCode", {
             get: function () {
-                return (this.opCode & 0x80) !== 0;
+                return this.code & 0x7f;
             },
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(Response.prototype, "code", {
+        Object.defineProperty(Packet.prototype, "isFinal", {
             get: function () {
-                return this.opCode & 0x7f;
+                return (this.code & 0x80) !== 0;
             },
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(Response.prototype, "length", {
+        Object.defineProperty(Packet.prototype, "length", {
             get: function () {
-                return this._data.getUint16(1);
+                return this._packetData.getUint16(1);
             },
             enumerable: true,
             configurable: true
         });
-        Object.defineProperty(Response.prototype, "data", {
+        Object.defineProperty(Packet.prototype, "data", {
             get: function () {
-                return this._responseData;
+                return this._data;
             },
             enumerable: true,
             configurable: true
         });
-        return Response;
+        return Packet;
     })();
-    Obex.Response = Response;
+    Obex.Packet = Packet;
 
-    var ResponseParser = (function () {
-        function ResponseParser() {
-            this._data = new GrowableBuffer();
+    // Processes a series of byte sequences, chunks it into Obex packets,
+    // and calls |handler| for each full packet received.
+    var PacketParser = (function () {
+        function PacketParser() {
+            this._buffer = new GrowableBuffer();
+            this._handler = null;
         }
-        ResponseParser.prototype.addData = function (data) {
+        PacketParser.prototype.setHandler = function (value) {
+            this._handler = value;
+        };
+
+        PacketParser.prototype.addData = function (data) {
             // Add |data| at end of array.
-            var offset = this._data.length;
-            this._data.setLength(this._data.length + data.byteLength);
-            this._data.setData(offset, data);
+            var offset = this._buffer.length;
+            this._buffer.setLength(this._buffer.length + data.byteLength);
+            this._buffer.setData(offset, data);
 
             // Parse data to figure out if we have a complete response.
             this.parseData();
         };
 
-        ResponseParser.prototype.setHandler = function (value) {
-            this._onResponse = value;
-        };
-
-        ResponseParser.prototype.parseData = function () {
-            if (this._data.length < 3)
+        PacketParser.prototype.parseData = function () {
+            if (this._buffer.length < 3)
                 return;
 
-            var response = new Response(this._data.toByteArrayView());
-            var responseLength = response.length;
-            if (responseLength > this._data.length)
+            var packet = new Packet(this._buffer.toByteArrayView());
+            var packetLength = packet.length;
+
+            // If we haven't receive all the packet data yet, return.
+            if (this._buffer.length < packetLength)
                 return;
-            if (responseLength <= this._data.length) {
-                response = new Response(this._data.toByteArrayView().subarray(0, responseLength));
-            }
-            this.flushResponse(responseLength);
-            this._onResponse(response);
+
+            // Create full packet and flush it from buffer.
+            packet = new Packet(this._buffer.toByteArrayView().subarray(0, packetLength));
+            this.flushPacket(packetLength);
+            this._handler(packet);
         };
 
-        ResponseParser.prototype.flushResponse = function (responseLength) {
-            var remaining_length = this._data.length - responseLength;
-            var remaining_data = this._data.toByteArrayView().subarray(responseLength, this._data.length);
+        PacketParser.prototype.flushPacket = function (packetLength) {
+            var remaining_length = this._buffer.length - packetLength;
+            var remaining_data = this._buffer.toByteArrayView().subarray(packetLength, this._buffer.length);
             var new_data = new GrowableBuffer();
             new_data.setLength(remaining_length);
             new_data.setData(0, remaining_data);
-            this._data = new_data;
+            this._buffer = new_data;
         };
-        return ResponseParser;
+        return PacketParser;
     })();
-    Obex.ResponseParser = ResponseParser;
+    Obex.PacketParser = PacketParser;
 
+    // Representation of an Obex CONNECT response packet.
     var ConnectResponse = (function () {
-        function ConnectResponse(_response) {
-            this._response = _response;
+        function ConnectResponse(_packet) {
+            this._packet = _packet;
             this._headerList = null;
         }
-        Object.defineProperty(ConnectResponse.prototype, "code", {
+        Object.defineProperty(ConnectResponse.prototype, "opCode", {
             get: function () {
-                return this._response.code;
+                return this._packet.opCode;
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(ConnectResponse.prototype, "obexVersion", {
             get: function () {
-                return this._response.data.getUint8(0);
+                return this._packet.data.getUint8(0);
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(ConnectResponse.prototype, "flags", {
             get: function () {
-                return this._response.data.getUint8(1);
+                return this._packet.data.getUint8(1);
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(ConnectResponse.prototype, "maxPacketSize", {
             get: function () {
-                return this._response.data.getUint16(2);
+                return this._packet.data.getUint16(2);
             },
             enumerable: true,
             configurable: true
@@ -972,7 +1041,7 @@ var Obex;
             get: function () {
                 if (this._headerList === null) {
                     // 4 = 1 (version) + 1 (flags) + 2 (maxPacketSize)
-                    var view = this._response.data.subarray(4);
+                    var view = this._packet.data.subarray(4);
                     var parser = new HeaderListParser(view);
                     this._headerList = parser.parse();
                 }
@@ -985,6 +1054,7 @@ var Obex;
     })();
     Obex.ConnectResponse = ConnectResponse;
 })(Obex || (Obex = {}));
+/// <reference path="core.ts"/>
 /// <reference path="obex.ts"/>
 var Assert;
 (function (Assert) {
@@ -1054,18 +1124,66 @@ var ObexTests;
         //var y2 = new DataView(x, 0, 0); // throws!
     });
 
-    Tests.run("Headers", function () {
+    Tests.run("StringMap_Empty", function () {
         // Prepare
+        var map = new Core.StringMap();
+
         // Act
         // Assert
-        Assert.isTrue(Obex.HeaderIdentifiers.Name.isUnicode);
-        Assert.isFalse(Obex.HeaderIdentifiers.Name.isByteSequence);
-        Assert.isFalse(Obex.HeaderIdentifiers.Count.isUnicode);
-        Assert.isTrue(Obex.HeaderIdentifiers.Count.isInt32);
-        Assert.isFalse(Obex.HeaderIdentifiers.Length.isUnicode);
-        Assert.isTrue(Obex.HeaderIdentifiers.Length.isInt32);
-        Assert.isFalse(Obex.HeaderIdentifiers.Type.isUnicode);
-        Assert.isTrue(Obex.HeaderIdentifiers.Type.isByteSequence);
+        Assert.isEqual(0, map.size);
+        Assert.isEqual("undefined", typeof map.get("key"));
+        Assert.isFalse(map.has("key"));
+        Assert.isFalse(map.delete("key"));
+    });
+
+    Tests.run("StringMap_Set", function () {
+        // Prepare
+        var map = new Core.StringMap();
+
+        // Act
+        map.set("key", 5);
+        map.set("key2", "test");
+
+        // Assert
+        Assert.isEqual(2, map.size);
+        Assert.isEqual(5, map.get("key"));
+        Assert.isEqual("test", map.get("key2"));
+        Assert.isTrue(map.has("key"));
+        Assert.isTrue(map.has("key2"));
+        Assert.isTrue(map.delete("key"));
+        Assert.isTrue(map.delete("key2"));
+    });
+
+    Tests.run("StringMap_forEach", function () {
+        // Prepare
+        var map = new Core.StringMap();
+        map.set("key", 5);
+        map.set("key2", "test");
+
+        // Act
+        var count = 0;
+        var seenKey = 0;
+        var seenKey2 = 0;
+        var seen5 = 0;
+        var seenText = 0;
+        map.forEach(function (value, index, map) {
+            if (index === "key")
+                seenKey++;
+            if (index === "key2")
+                seenKey2++;
+            if (value === 5)
+                seen5++;
+            if (value === "test")
+                seenText++;
+            count++;
+        });
+
+        // Assert
+        Assert.isEqual(2, count);
+        Assert.isEqual(1, seenKey);
+        Assert.isEqual(1, seenKey2);
+        Assert.isEqual(1, seen5);
+        Assert.isEqual(1, seenText);
     });
 
     Tests.run("ByteArrayView_emtpy", function () {
@@ -1186,6 +1304,20 @@ var ObexTests;
         }
     });
 
+    Tests.run("Headers", function () {
+        // Prepare
+        // Act
+        // Assert
+        Assert.isTrue(Obex.HeaderIdentifiers.Name.isUnicode);
+        Assert.isFalse(Obex.HeaderIdentifiers.Name.isByteSequence);
+        Assert.isFalse(Obex.HeaderIdentifiers.Count.isUnicode);
+        Assert.isTrue(Obex.HeaderIdentifiers.Count.isInt32);
+        Assert.isFalse(Obex.HeaderIdentifiers.Length.isUnicode);
+        Assert.isTrue(Obex.HeaderIdentifiers.Length.isInt32);
+        Assert.isFalse(Obex.HeaderIdentifiers.Type.isUnicode);
+        Assert.isTrue(Obex.HeaderIdentifiers.Type.isByteSequence);
+    });
+
     Tests.run("HeaderListBuilder1", function () {
         // Prepare
         var builder = new Obex.HeaderListBuilder();
@@ -1241,94 +1373,6 @@ var ObexTests;
         Assert.isEqual(126, buffer.byteLength);
     });
 
-    Tests.run("ConnectRequestBuilder", function () {
-        // Prepare
-        var request = new Obex.ConnectRequestBuilder();
-        request.maxPacketSize = 8 * 1024;
-        request.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(4);
-        request.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(0xf483);
-
-        // Act
-        var stream = new Obex.ByteStream();
-        request.serialize(stream);
-        var buffer = stream.toArrayBuffer();
-
-        // Assert
-        Assert.isNotNull(buffer);
-        Assert.isEqual(17, buffer.byteLength);
-    });
-
-    Tests.run("ResponseParser1", function () {
-        // Prepare
-        var dataStream = new Obex.ByteStream();
-        dataStream.addUint8(32 /* Success */);
-        dataStream.addUint16(10); // length
-        for (var i = 0; i < 7; i++) {
-            dataStream.addUint8(i);
-        }
-
-        var parser = new Obex.ResponseParser();
-        var responseCount = 0;
-        var lastResponse = null;
-        parser.setHandler(function (response) {
-            lastResponse = response;
-            responseCount++;
-        });
-
-        // Act
-        parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 3));
-        parser.addData(dataStream.buffer.toByteArrayView().subarray(3, 10));
-
-        // Assert
-        Assert.isEqual(1, responseCount);
-        Assert.isNotNull(lastResponse);
-        Assert.isEqual(32 /* Success */, lastResponse.code);
-        Assert.isEqual(10, lastResponse.length);
-        Assert.isEqual(7, lastResponse.data.byteLength);
-    });
-
-    Tests.run("ResponseParser2", function () {
-        // Prepare
-        var dataStream = new Obex.ByteStream();
-        dataStream.addUint8(32 /* Success */);
-        dataStream.addUint16(10); // length
-        for (var i = 0; i < 7; i++) {
-            dataStream.addUint8(i);
-        }
-        dataStream.addUint8(33 /* Created */);
-        dataStream.addUint16(4); // length
-        dataStream.addUint8(0xa0);
-
-        var parser = new Obex.ResponseParser();
-        var responseCount = 0;
-        var lastResponse = null;
-        parser.setHandler(function (response) {
-            lastResponse = response;
-            responseCount++;
-        });
-
-        // Act
-        parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 13));
-
-        // Assert
-        Assert.isEqual(1, responseCount);
-        Assert.isNotNull(lastResponse);
-        Assert.isEqual(32 /* Success */, lastResponse.code);
-        Assert.isEqual(10, lastResponse.length);
-        Assert.isEqual(7, lastResponse.data.byteLength);
-        lastResponse = null;
-
-        // Act
-        parser.addData(dataStream.buffer.toByteArrayView().subarray(13, 14));
-
-        // Assert
-        Assert.isEqual(2, responseCount);
-        Assert.isNotNull(lastResponse);
-        Assert.isEqual(33 /* Created */, lastResponse.code);
-        Assert.isEqual(4, lastResponse.length);
-        Assert.isEqual(1, lastResponse.data.byteLength);
-    });
-
     Tests.run("HeaderParser", function () {
         // Prepare
         var builder = new Obex.HeaderListBuilder();
@@ -1360,7 +1404,91 @@ var ObexTests;
         Assert.isEqual(100, list.get(Obex.HeaderIdentifiers.Body).value.asByteArrayView.byteLength);
     });
 
-    function foo(x, y) {
-        if (typeof y === "undefined") { y = x; }
-    }
+    Tests.run("ConnectRequestBuilder", function () {
+        // Prepare
+        var request = new Obex.ConnectRequestBuilder();
+        request.maxPacketSize = 8 * 1024;
+        request.headerList.add(Obex.HeaderIdentifiers.Count).value.setUint32(4);
+        request.headerList.add(Obex.HeaderIdentifiers.Length).value.setUint32(0xf483);
+
+        // Act
+        var stream = new Obex.ByteStream();
+        request.serialize(stream);
+        var buffer = stream.toArrayBuffer();
+
+        // Assert
+        Assert.isNotNull(buffer);
+        Assert.isEqual(17, buffer.byteLength);
+    });
+
+    Tests.run("PacketParser1", function () {
+        // Prepare
+        var dataStream = new Obex.ByteStream();
+        dataStream.addUint8(32 /* Success */);
+        dataStream.addUint16(10); // length
+        for (var i = 0; i < 7; i++) {
+            dataStream.addUint8(i);
+        }
+
+        var parser = new Obex.PacketParser();
+        var responseCount = 0;
+        var lastResponse = null;
+        parser.setHandler(function (response) {
+            lastResponse = response;
+            responseCount++;
+        });
+
+        // Act
+        parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 3));
+        parser.addData(dataStream.buffer.toByteArrayView().subarray(3, 10));
+
+        // Assert
+        Assert.isEqual(1, responseCount);
+        Assert.isNotNull(lastResponse);
+        Assert.isEqual(32 /* Success */, lastResponse.opCode);
+        Assert.isEqual(10, lastResponse.length);
+        Assert.isEqual(7, lastResponse.data.byteLength);
+    });
+
+    Tests.run("PacketParser2", function () {
+        // Prepare
+        var dataStream = new Obex.ByteStream();
+        dataStream.addUint8(32 /* Success */);
+        dataStream.addUint16(10); // length
+        for (var i = 0; i < 7; i++) {
+            dataStream.addUint8(i);
+        }
+        dataStream.addUint8(33 /* Created */);
+        dataStream.addUint16(4); // length
+        dataStream.addUint8(0xa0);
+
+        var parser = new Obex.PacketParser();
+        var responseCount = 0;
+        var lastResponse = null;
+        parser.setHandler(function (response) {
+            lastResponse = response;
+            responseCount++;
+        });
+
+        // Act
+        parser.addData(dataStream.buffer.toByteArrayView().subarray(0, 13));
+
+        // Assert
+        Assert.isEqual(1, responseCount);
+        Assert.isNotNull(lastResponse);
+        Assert.isEqual(32 /* Success */, lastResponse.opCode);
+        Assert.isEqual(10, lastResponse.length);
+        Assert.isEqual(7, lastResponse.data.byteLength);
+        lastResponse = null;
+
+        // Act
+        parser.addData(dataStream.buffer.toByteArrayView().subarray(13, 14));
+
+        // Assert
+        Assert.isEqual(2, responseCount);
+        Assert.isNotNull(lastResponse);
+        Assert.isEqual(33 /* Created */, lastResponse.opCode);
+        Assert.isEqual(4, lastResponse.length);
+        Assert.isEqual(1, lastResponse.data.byteLength);
+    });
 })(ObexTests || (ObexTests = {}));

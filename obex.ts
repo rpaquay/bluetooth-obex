@@ -2,6 +2,8 @@
 // It is a request/response message protocol where each request/response
 // message is a set of headers followed by a body.
 
+/// <reference path="core.ts"/>
+
 module Obex {
   var LittleEndian = false;
 
@@ -55,8 +57,6 @@ module Obex {
     }
 
     public get byteLength(): number { return this._view.byteLength; }
-    //public get byteOffset(): number { return this._view.byteOffset; }
-    //public get buffer(): ArrayBuffer { return this._view.buffer; }
 
     public setUint8(offset: number, value: number): void {
       this._view.setUint8(offset, value);
@@ -205,7 +205,7 @@ module Obex {
     }
   }
 
-  // Headers identifier abstraction + helper functions.
+  // Abstraction of an Obex header identifier instance.
   export class HeaderIdentifier {
     public constructor(public value: number) {
     }
@@ -239,6 +239,7 @@ module Obex {
     Int32 = 0xc0,
   }
 
+  // Well known Obex header identifiers.
   export class HeaderIdentifiers {
     public static Count = new HeaderIdentifier(0xc0);
     public static Name = new HeaderIdentifier(0x01);
@@ -250,6 +251,8 @@ module Obex {
     public static Description = new HeaderIdentifier(0x05);
   }
 
+  // Abstraction of an Obax Header value, with its kind and internal
+  // represenation.
   export class HeaderValue {
     private _kind: HeaderValueKind;
     private _intValue: number;
@@ -395,17 +398,6 @@ module Obex {
     }
   }
 
-  export enum RequestOpCode {
-    Connect = 0x80,
-    Disconnect = 0x81,
-    Put = 0x02,
-    PutFinal = 0x82,
-    Get = 0x03,
-    GetFinal = 0x83,
-    Session = 0x87,
-    Abort = 0xff,
-  }
-
   export class HeaderListBuilder {
     public _headerList = new HeaderList();
 
@@ -515,6 +507,18 @@ module Obex {
     }
   }
 
+  export enum RequestOpCode {
+    Connect = 0x80,
+    Disconnect = 0x81,
+    Put = 0x02,
+    PutFinal = 0x82,
+    Get = 0x03,
+    GetFinal = 0x83,
+    Session = 0x87,
+    Abort = 0xff,
+  }
+
+  // Base class for specialized request builders.
   export class RequestBuilder {
     private _opCode: RequestOpCode;
     private _headerList = new HeaderListBuilder();
@@ -545,6 +549,7 @@ module Obex {
     }
   }
 
+  // Builder for a CONNECT Obex request.
   export class ConnectRequestBuilder extends RequestBuilder {
     private _maxPacketSize = 255;
 
@@ -573,6 +578,7 @@ module Obex {
     }
   }
 
+  // Builder for a DISCONNECT Obex request.
   export class DisconnectRequestBuilder extends RequestBuilder {
     public constructor() {
       super();
@@ -580,6 +586,7 @@ module Obex {
     }
   }
 
+  // Builder for a PUT Obex request.
   export class PutRequestBuilder extends RequestBuilder {
     public constructor() {
       super();
@@ -613,7 +620,7 @@ module Obex {
     public set endOfbody(value: ByteArrayView) { this.headerList.add(Obex.HeaderIdentifiers.EndOfBody).value.setByteSequence(value); }
   }
 
-  export enum ResponseCode {
+  export enum ResponseOpCode {
     Reserved = 0x00,
     Continue = 0x10,
     Success = 0x20,
@@ -622,77 +629,83 @@ module Obex {
     MultipleChoice = 0x30,
   }
 
-  export class Response {
+  //Representation of an Obex packet (request or response).
+  export class Packet {
+    private _packetData: ByteArrayView;
     private _data: ByteArrayView;
-    private _responseData: ByteArrayView;
 
-    public constructor(data: ByteArrayView) {
-      this._data = data;
-      this._responseData = data.subarray(3); // Skip opcode and length
+    public constructor(packetData: ByteArrayView) {
+      this._packetData = packetData;
+      this._data = packetData.subarray(3); // Skip opcode and length
     }
-    public get opCode(): number { return this._data.getUint8(0); }
-    public get isFinal(): boolean { return (this.opCode & 0x80) !== 0; }
-    public get code(): ResponseCode { return this.opCode & 0x7f; }
-    public get length(): number { return this._data.getUint16(1); }
-    public get data(): ByteArrayView { return this._responseData; }
+    public get code(): number { return this._packetData.getUint8(0); }
+    public get opCode(): number { return this.code & 0x7f; }
+    public get isFinal(): boolean { return (this.code & 0x80) !== 0; }
+    public get length(): number { return this._packetData.getUint16(1); }
+    public get data(): ByteArrayView { return this._data; }
   }
 
-  export class ResponseParser {
-    private _data = new GrowableBuffer();
-    private _onResponse: (value: Response) => void;
+  // Processes a series of byte sequences, chunks it into Obex packets,
+  // and calls |handler| for each full packet received.
+  export class PacketParser {
+    private _buffer = new GrowableBuffer();
+    private _handler: (value: Packet) => void = null;
 
-    public addData(data: ByteArrayView) {
+    public setHandler(value: (packet: Packet) => void): void {
+      this._handler = value;
+    }
+
+    public addData(data: ByteArrayView): void {
       // Add |data| at end of array.
-      var offset = this._data.length;
-      this._data.setLength(this._data.length + data.byteLength);
-      this._data.setData(offset, data);
+      var offset = this._buffer.length;
+      this._buffer.setLength(this._buffer.length + data.byteLength);
+      this._buffer.setData(offset, data);
 
       // Parse data to figure out if we have a complete response.
       this.parseData();
     }
 
-    public setHandler(value: (value: Response) => void): void {
-      this._onResponse = value;
-    }
-
     private parseData(): void {
-      if (this._data.length < 3)
+      if (this._buffer.length < 3)
         return;
 
-      var response = new Response(this._data.toByteArrayView());
-      var responseLength = response.length;
-      if (responseLength > this._data.length)
+      var packet = new Packet(this._buffer.toByteArrayView());
+      var packetLength = packet.length;
+
+      // If we haven't receive all the packet data yet, return.
+      if (this._buffer.length < packetLength)
         return;
-      if (responseLength <= this._data.length) {
-        response = new Response(this._data.toByteArrayView().subarray(0, responseLength));
-      }
-      this.flushResponse(responseLength);
-      this._onResponse(response);
+
+      // Create full packet and flush it from buffer.
+      packet = new Packet(this._buffer.toByteArrayView().subarray(0, packetLength));
+      this.flushPacket(packetLength);
+      this._handler(packet);
     }
 
-    private flushResponse(responseLength: number): void {
-      var remaining_length = this._data.length - responseLength;
-      var remaining_data = this._data.toByteArrayView().subarray(responseLength, this._data.length); 
+    private flushPacket(packetLength: number): void {
+      var remaining_length = this._buffer.length - packetLength;
+      var remaining_data = this._buffer.toByteArrayView().subarray(packetLength, this._buffer.length);
       var new_data = new GrowableBuffer();
       new_data.setLength(remaining_length);
       new_data.setData(0, remaining_data);
-      this._data = new_data;
+      this._buffer = new_data;
     }
   }
 
+  // Representation of an Obex CONNECT response packet.
   export class ConnectResponse {
     private _headerList: HeaderList = null;
-    public constructor(private _response: Response) {
+    public constructor(private _packet: Packet) {
     }
 
-    public get code(): ResponseCode { return this._response.code; }
-    public get obexVersion(): number { return this._response.data.getUint8(0); }
-    public get flags(): number { return this._response.data.getUint8(1); }
-    public get maxPacketSize(): number { return this._response.data.getUint16(2); }
+    public get opCode(): ResponseOpCode { return this._packet.opCode; }
+    public get obexVersion(): number { return this._packet.data.getUint8(0); }
+    public get flags(): number { return this._packet.data.getUint8(1); }
+    public get maxPacketSize(): number { return this._packet.data.getUint16(2); }
     public get headerList(): HeaderList {
       if (this._headerList === null) {
         // 4 = 1 (version) + 1 (flags) + 2 (maxPacketSize)
-        var view = this._response.data.subarray(4);
+        var view = this._packet.data.subarray(4);
         var parser = new HeaderListParser(view);
         this._headerList = parser.parse();
       }
