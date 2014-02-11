@@ -843,12 +843,51 @@ var Obex;
     Obex.PutRequestBuilder = PutRequestBuilder;
 
     (function (ResponseOpCode) {
-        ResponseOpCode[ResponseOpCode["Reserved"] = 0x00] = "Reserved";
+        ResponseOpCode[ResponseOpCode["None"] = 0x00] = "None";
+
         ResponseOpCode[ResponseOpCode["Continue"] = 0x10] = "Continue";
+
         ResponseOpCode[ResponseOpCode["Success"] = 0x20] = "Success";
-        ResponseOpCode[ResponseOpCode["Created"] = 0x21] = "Created";
+        ResponseOpCode[ResponseOpCode["Created"] = 33] = "Created";
+        ResponseOpCode[ResponseOpCode["Accepted"] = 34] = "Accepted";
+        ResponseOpCode[ResponseOpCode["NonAuthoritativeInformation"] = 35] = "NonAuthoritativeInformation";
+        ResponseOpCode[ResponseOpCode["NoContent"] = 36] = "NoContent";
+        ResponseOpCode[ResponseOpCode["ResetContent"] = 37] = "ResetContent";
+        ResponseOpCode[ResponseOpCode["PartialContent"] = 38] = "PartialContent";
 
         ResponseOpCode[ResponseOpCode["MultipleChoice"] = 0x30] = "MultipleChoice";
+        ResponseOpCode[ResponseOpCode["MovedPermanently"] = 49] = "MovedPermanently";
+        ResponseOpCode[ResponseOpCode["Movedtemporarily"] = 50] = "Movedtemporarily";
+        ResponseOpCode[ResponseOpCode["SeeOther"] = 51] = "SeeOther";
+        ResponseOpCode[ResponseOpCode["Notmodified"] = 52] = "Notmodified";
+        ResponseOpCode[ResponseOpCode["UseProxy"] = 53] = "UseProxy";
+
+        ResponseOpCode[ResponseOpCode["BadRequest"] = 0x40] = "BadRequest";
+        ResponseOpCode[ResponseOpCode["Unauthorized"] = 65] = "Unauthorized";
+        ResponseOpCode[ResponseOpCode["PaymentRequired"] = 66] = "PaymentRequired";
+        ResponseOpCode[ResponseOpCode["Forbidden"] = 67] = "Forbidden";
+        ResponseOpCode[ResponseOpCode["NotFound"] = 68] = "NotFound";
+        ResponseOpCode[ResponseOpCode["MethodNotAllowed"] = 69] = "MethodNotAllowed";
+        ResponseOpCode[ResponseOpCode["NotAcceptable"] = 70] = "NotAcceptable";
+        ResponseOpCode[ResponseOpCode["ProxyAuthenticationRequired"] = 71] = "ProxyAuthenticationRequired";
+        ResponseOpCode[ResponseOpCode["RequestTimeOut"] = 72] = "RequestTimeOut";
+        ResponseOpCode[ResponseOpCode["Conflict"] = 73] = "Conflict";
+        ResponseOpCode[ResponseOpCode["Gone"] = 74] = "Gone";
+        ResponseOpCode[ResponseOpCode["LengthRequired"] = 75] = "LengthRequired";
+        ResponseOpCode[ResponseOpCode["PreconditionFailed"] = 76] = "PreconditionFailed";
+        ResponseOpCode[ResponseOpCode["RequestedEntityTooLarge"] = 77] = "RequestedEntityTooLarge";
+        ResponseOpCode[ResponseOpCode["RequestURLTooLarge"] = 78] = "RequestURLTooLarge";
+        ResponseOpCode[ResponseOpCode["UnsupportedMediaType"] = 79] = "UnsupportedMediaType";
+
+        ResponseOpCode[ResponseOpCode["InternalServerError"] = 0x50] = "InternalServerError";
+        ResponseOpCode[ResponseOpCode["NotImplemented"] = 81] = "NotImplemented";
+        ResponseOpCode[ResponseOpCode["BadGateway"] = 82] = "BadGateway";
+        ResponseOpCode[ResponseOpCode["ServiceUnavailable"] = 83] = "ServiceUnavailable";
+        ResponseOpCode[ResponseOpCode["GatewayTimeout"] = 84] = "GatewayTimeout";
+        ResponseOpCode[ResponseOpCode["HTTPVersionNotSupported"] = 85] = "HTTPVersionNotSupported";
+
+        ResponseOpCode[ResponseOpCode["DatabaseFull"] = 0x60] = "DatabaseFull";
+        ResponseOpCode[ResponseOpCode["DatabaseLocked"] = 97] = "DatabaseLocked";
     })(Obex.ResponseOpCode || (Obex.ResponseOpCode = {}));
     var ResponseOpCode = Obex.ResponseOpCode;
 
