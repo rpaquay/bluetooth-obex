@@ -621,12 +621,52 @@ module Obex {
   }
 
   export enum ResponseOpCode {
-    Reserved = 0x00,
+    None = 0x00,
+
     Continue = 0x10,
+
     Success = 0x20,
-    Created = 0x21,
+    Created,
+    Accepted,
+    NonAuthoritativeInformation,
+    NoContent,
+    ResetContent,
+    PartialContent,
 
     MultipleChoice = 0x30,
+    MovedPermanently,
+    Movedtemporarily,
+    SeeOther,
+    Notmodified ,
+    UseProxy,
+
+    BadRequest = 0x40,
+    Unauthorized,
+    PaymentRequired,
+    Forbidden,
+    NotFound,
+    MethodNotAllowed,
+    NotAcceptable,
+    ProxyAuthenticationRequired,
+    RequestTimeOut,
+    Conflict,
+    Gone ,
+    LengthRequired,
+    PreconditionFailed,
+    RequestedEntityTooLarge,
+    RequestURLTooLarge,
+    UnsupportedMediaType,
+
+    InternalServerError = 0x50,
+    NotImplemented,
+    BadGateway,
+    ServiceUnavailable,
+    GatewayTimeout,
+    HTTPVersionNotSupported,
+
+    DatabaseFull = 0x60,
+    DatabaseLocked,
+
   }
 
   //Representation of an Obex packet (request or response).
