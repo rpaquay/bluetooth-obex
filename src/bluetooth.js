@@ -4,9 +4,23 @@ var Bluetooth;
 (function (Bluetooth) {
     var RequestProcessor = (function () {
         function RequestProcessor(socket) {
+            var _this = this;
             this._parser = new Obex.PacketParser();
             this._errorMessage = "";
+            this._responseCallbacks = [];
             this._socket = socket;
+            this._parser.setHandler(function (packet) {
+                return _this.onResponse(packet);
+            });
+            this._listener1 = function (info) {
+                return _this.onSocketReceive(info);
+            };
+            this._listener2 = function (info) {
+                return _this.onSocketReceiveError(info);
+            };
+            chrome.bluetooth.onReceive.addListener(this._listener1);
+            chrome.bluetooth.onReceiveError.addListener(this._listener2);
+            chrome.bluetooth.setSocketPaused(socket.id, false);
         }
         Object.defineProperty(RequestProcessor.prototype, "errorMessage", {
             get: function () {
@@ -36,7 +50,8 @@ var Bluetooth;
             var buffer = stream.toArrayBuffer();
 
             //Obex.dumpArrayBuffer(buffer);
-            chrome.bluetooth.write({ socket: this._socket, data: buffer }, function (result) {
+            this._responseCallbacks.push(responseCallback);
+            chrome.bluetooth.send({ socketId: this._socket.id, data: buffer }, function (result) {
                 if (chrome.runtime.lastError) {
                     _this.setError("Error sending packet to peer: " + chrome.runtime.lastError.message);
                     return;
@@ -46,50 +61,29 @@ var Bluetooth;
                     _this.setError("Error sending packet to peer: Could not send all bytes.");
                     return;
                 }
-
-                _this.readResponse(responseCallback);
             });
         };
 
-        RequestProcessor.prototype.readResponse = function (responseCallback) {
-            var _this = this;
-            var responseProcessed = false;
-            var responseHandler = function (packet) {
-                console.log("Packet received!");
-                responseCallback(packet);
-                responseProcessed = true;
-            };
-
-            var readCallback = function (data) {
-                _this._parser.addData(new Obex.ByteArrayView(data));
-                if (responseProcessed)
-                    return;
-                _this.readPoll(readCallback);
-            };
-
-            this._parser.setHandler(responseHandler);
-            this.readPoll(readCallback);
+        RequestProcessor.prototype.onResponse = function (packet) {
+            if (this._responseCallbacks.length == 0) {
+                this.setError("Callback array is empty.");
+            }
+            var callback = this._responseCallbacks.shift();
+            callback(packet);
         };
 
-        RequestProcessor.prototype.readPoll = function (callback) {
-            var _this = this;
-            chrome.bluetooth.read({ socket: this._socket }, function (result) {
-                if (chrome.runtime.lastError) {
-                    _this.setError("Error reading packet from peer: " + chrome.runtime.lastError.message);
-                    return;
-                }
+        RequestProcessor.prototype.onSocketReceive = function (info) {
+            if (info.socketId !== this._socket.id)
+                return;
+            this._parser.addData(new Obex.ByteArrayView(info.data));
+        };
 
-                if (result.byteLength === 0) {
-                    //console.log("Nothing received from peer. Polling again in 1000 ms.");
-                    window.setTimeout(function () {
-                        return _this.readPoll(callback);
-                    }, 10);
-                    return;
-                }
-
-                console.log("Received data from peer.");
-                callback(result);
-            });
+        RequestProcessor.prototype.onSocketReceiveError = function (info) {
+            if (info.socketId !== this._socket.id)
+                return;
+            this.setError("Error reading packet from peer: " + info.errorMessage);
+            chrome.bluetooth.onReceive.removeListener(this._listener1);
+            chrome.bluetooth.onReceiveError.removeListener(this._listener2);
         };
         return RequestProcessor;
     })();

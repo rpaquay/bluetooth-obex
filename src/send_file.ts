@@ -11,9 +11,20 @@ module SendFile {
     var msg_str = (typeof (msg) == 'object') ? JSON.stringify(msg) : msg;
     console.log(msg_str);
 
-    var l = document.getElementById('log');
-    if (l) {
-      l.innerText += msg_str + '\n';
+    var ul = document.getElementById('messages-ul');
+    if (ul) {
+      var li = document.createElement("li");
+      li.className = "message";
+
+      var div = document.createElement("div");
+      div.className = "content";
+
+      var span = document.createElement("span");
+      span.innerText = msg;
+
+      ul.appendChild(li);
+      li.appendChild(div);
+      div.appendChild(span);
     }
   }
 
@@ -76,7 +87,7 @@ module SendFile {
     registerObexPushProfile(profile => {
       Bluetooth.connectionDispatcher.setHandler(device, profile, (socket) => {
         sendFileToSocket(socket, fileName, contents, () => {
-          chrome.bluetooth.disconnect({ socket: socket }, () => {
+          chrome.bluetooth.disconnect({ socketId: socket.id }, () => {
             log("Socket closed.");
           });
         });

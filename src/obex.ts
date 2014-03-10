@@ -669,7 +669,7 @@ module Obex {
 
   }
 
-  //Representation of an Obex packet (request or response).
+  // Representation of an Obex packet (request or response).
   export class Packet {
     private _packetData: ByteArrayView;
     private _data: ByteArrayView;

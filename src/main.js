@@ -43,15 +43,6 @@ function GetDeviceProfilesClick(device) {
     });
 }
 
-function GetDeviceServicesClick(device) {
-    ClearChildren(document.getElementById("service-list"));
-    chrome.bluetooth.getServices({ deviceAddress: device.address }, function (services) {
-        services.forEach(function (service) {
-            DisplayService(service);
-        });
-    });
-}
-
 function sendPutRequest(socket, callback) {
     var request = new Obex.PutRequestBuilder();
     request.isFinal = true;
@@ -117,7 +108,7 @@ function ObjectPushClick(device) {
 
     Bluetooth.connectionDispatcher.setHandler(device, profile, function (socket) {
         sendPutRequest(socket, function (socket, response) {
-            chrome.bluetooth.disconnect({ socket: socket }, function () {
+            chrome.bluetooth.disconnect({ socketId: socket.id }, function () {
                 console.log("Socket disconnected!");
             });
         });
@@ -166,12 +157,6 @@ function ListDevicesClick() {
                 GetDeviceProfilesClick(device);
             });
             td.appendChild(getProfilesAction);
-
-            //
-            var getServicesAction = CreateActionButton("", "Get Services", function () {
-                GetDeviceServicesClick(device);
-            });
-            td.appendChild(getServicesAction);
 
             //
             var objectPushAction = CreateActionButton("", "Push", function () {
@@ -313,6 +298,19 @@ function Setup() {
     document.getElementById('register-object-push-profile').onclick = RegisterObjectPushProfile;
     document.getElementById('unregister-object-push-profile').onclick = UnregisterObjectPushProfile;
     chrome.bluetooth.onAdapterStateChanged.addListener(OnAdapterStateChanged);
+
+    var request = new Obex.PutRequestBuilder();
+    request.isFinal = true;
+    request.length = 3;
+    request.name = "hello.txt";
+    request.body = new Obex.ByteArrayView(new ArrayBuffer(3));
+    var view = request.body;
+    view.setUint8(0, 'a'.charCodeAt(0));
+    view.setUint8(1, 'b'.charCodeAt(0));
+    view.setUint8(2, 'c'.charCodeAt(0));
+    //var stream = new Obex.ByteStream();
+    //request.serialize(stream);
+    //Obex.dumpArrayBuffer(stream.toArrayBuffer());
 }
 
 window.onload = function () {

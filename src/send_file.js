@@ -11,9 +11,20 @@ var SendFile;
         var msg_str = (typeof (msg) == 'object') ? JSON.stringify(msg) : msg;
         console.log(msg_str);
 
-        var l = document.getElementById('log');
-        if (l) {
-            l.innerText += msg_str + '\n';
+        var ul = document.getElementById('messages-ul');
+        if (ul) {
+            var li = document.createElement("li");
+            li.className = "message";
+
+            var div = document.createElement("div");
+            div.className = "content";
+
+            var span = document.createElement("span");
+            span.innerText = msg;
+
+            ul.appendChild(li);
+            li.appendChild(div);
+            div.appendChild(span);
         }
     }
 
@@ -75,7 +86,7 @@ var SendFile;
         registerObexPushProfile(function (profile) {
             Bluetooth.connectionDispatcher.setHandler(device, profile, function (socket) {
                 sendFileToSocket(socket, fileName, contents, function () {
-                    chrome.bluetooth.disconnect({ socket: socket }, function () {
+                    chrome.bluetooth.disconnect({ socketId: socket.id }, function () {
                         log("Socket closed.");
                     });
                 });

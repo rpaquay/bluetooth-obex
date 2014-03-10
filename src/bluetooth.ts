@@ -2,14 +2,27 @@
 /// <reference path="obex.ts"/>
 
 module Bluetooth {
+  interface ResponseCallback {
+    (response: Obex.Packet): void
+  }
+
   export class RequestProcessor {
     private _socket: Bluetooth.Socket;
     private _parser = new Obex.PacketParser();
     private _errorHandler: () => void;
     private _errorMessage = "";
+    private _responseCallbacks: ResponseCallback[] = [];
+    private _listener1: any;
+    private _listener2: any;
 
     public constructor(socket: Bluetooth.Socket) {
       this._socket = socket;
+      this._parser.setHandler(packet => this.onResponse(packet));
+      this._listener1 = (info: Bluetooth.ReceiveInfo) => this.onSocketReceive(info);
+      this._listener2 = (info: Bluetooth.ReceiveErrorInfo) => this.onSocketReceiveError(info);
+      chrome.bluetooth.onReceive.addListener(this._listener1);
+      chrome.bluetooth.onReceiveError.addListener(this._listener2);
+      chrome.bluetooth.setSocketPaused(socket.id, false);
     }
 
     public get errorMessage(): string { return this._errorMessage; }
@@ -33,7 +46,8 @@ module Bluetooth {
       var buffer = stream.toArrayBuffer();
       //Obex.dumpArrayBuffer(buffer);
 
-      chrome.bluetooth.write({ socket: this._socket, data: buffer }, (result: number) => {
+      this._responseCallbacks.push(responseCallback);
+      chrome.bluetooth.send({ socketId: this._socket.id, data: buffer }, (result: number) => {
         if (chrome.runtime.lastError) {
           this.setError("Error sending packet to peer: " + chrome.runtime.lastError.message);
           return;
@@ -43,46 +57,29 @@ module Bluetooth {
           this.setError("Error sending packet to peer: Could not send all bytes.");
           return;
         }
-
-        this.readResponse(responseCallback);
       });
     }
 
-    private readResponse(responseCallback: (response: Obex.Packet) => void) {
-      var responseProcessed = false;
-      var responseHandler = packet => {
-        console.log("Packet received!");
-        responseCallback(packet);
-        responseProcessed = true;
-      };
-
-      var readCallback = (data: ArrayBuffer) => {
-        this._parser.addData(new Obex.ByteArrayView(data));
-        if (responseProcessed)
-          return;
-        this.readPoll(readCallback);
-      };
-
-      this._parser.setHandler(responseHandler);
-      this.readPoll(readCallback);
+    private onResponse(packet: Obex.Packet): void {
+      if (this._responseCallbacks.length == 0) {
+        this.setError("Callback array is empty.");
+      }
+      var callback = this._responseCallbacks.shift();
+      callback(packet);
     }
 
-    private readPoll(callback: (result: ArrayBuffer) => void) {
-      chrome.bluetooth.read({ socket: this._socket }, (result?: ArrayBuffer) => {
-        if (chrome.runtime.lastError) {
-          this.setError("Error reading packet from peer: " + chrome.runtime.lastError.message);
-          return;
-        }
+    private onSocketReceive(info: Bluetooth.ReceiveInfo) {
+      if (info.socketId !== this._socket.id)
+        return;
+      this._parser.addData(new Obex.ByteArrayView(info.data));
+    }
 
-        if (result.byteLength === 0) {
-          //console.log("Nothing received from peer. Polling again in 1000 ms.");
-          window.setTimeout(() => this.readPoll(callback), 10);
-          return;
-        }
-
-        console.log("Received data from peer.");
-        callback(result);
-      });
+    private onSocketReceiveError(info: Bluetooth.ReceiveErrorInfo) {
+      if (info.socketId !== this._socket.id)
+        return;
+      this.setError("Error reading packet from peer: " + info.errorMessage);
+      chrome.bluetooth.onReceive.removeListener(this._listener1);
+      chrome.bluetooth.onReceiveError.removeListener(this._listener2);
     }
   }
 

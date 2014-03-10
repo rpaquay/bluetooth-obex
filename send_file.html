@@ -1,6 +1,7 @@
 <html>
   <head>
     <title>bluetooth API Tests!</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
     <link rel="stylesheet" type="text/css" href="send_file.css">
     <script src="src/core.js"></script>
     <script src="src/obex.js"></script>
@@ -8,6 +9,8 @@
     <script src="src/send_file.js"></script>
   </head>
   <body>
+    <div id="main">
+    <div>
     <table>
       <caption>Device list</caption>
       <thead>
@@ -22,6 +25,10 @@
       <tbody id="device-list">
       </tbody>
     </table>
-    <pre id="log"></pre>
+    </div>
+    <div id="messages-container">
+      <ul id="messages-ul" class="messages"></ul>
+    </div>
+    </div>
   </body>
 </html>

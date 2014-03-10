@@ -947,7 +947,7 @@ var Obex;
     })(Obex.ResponseOpCode || (Obex.ResponseOpCode = {}));
     var ResponseOpCode = Obex.ResponseOpCode;
 
-    //Representation of an Obex packet (request or response).
+    // Representation of an Obex packet (request or response).
     var Packet = (function () {
         function Packet(packetData) {
             this._packetData = packetData;

@@ -27,9 +27,6 @@ declare module Bluetooth {
   export interface OutOfBandPairingData {
   }
 
-  export interface ServiceRecord {
-  }
-
   export interface Profile {
     // Unique profile identifier, e.g. 00001401-0000-1000-8000-00805F9B23FB
     uuid: string;
@@ -85,9 +82,9 @@ declare module Bluetooth {
   }
 
   // Options for the write function.
-  export interface WriteOptions {
+  export interface SendOptions {
     // The socket to write to.
-    socket: Socket;
+    socketId: number;
 
     // The data to write.
     data: ArrayBuffer;
@@ -115,18 +112,13 @@ declare module Bluetooth {
   interface OutOfBandPairingDataCallback { (data: OutOfBandPairingData): void; }
   interface ProfilesCallback { (result: Profile[]): void; }
   interface ResultCallback { (): void; }
-  interface ServicesCallback { (result: ServiceRecord[]): void; }
   interface SizeCallback { (result: number): void; }
   interface SocketCallback { (result: Socket): void; }
-
-  export interface ReadOptions {
-    socket: Socket;
-  }
 
   // Options for the disconnect function.
   export interface DisconnectOptions {
     // The socket to disconnect.
-    socket: Socket;
+    socketId: number;
   }
 
   // Options for the getDevices function. If |profile| is not provided, all
@@ -158,6 +150,38 @@ declare module Bluetooth {
     profile: Profile;
   }
 
+  // Data from an <code>onReceive</code> event.
+  export interface ReceiveInfo {
+    // The socket identifier.
+    socketId: number;
+
+    // The data received, with a maxium size of <code>bufferSize</code>.
+    data: ArrayBuffer;
+  }
+
+  enum ReceiveError {
+    // The connection was disconnected.
+    disconnected,
+
+    // The device was most likely disconnected from the host.
+    device_lost,
+
+    // A system error occurred and the connection may be unrecoverable.
+    system_error
+  }
+
+  // Data from an <code>onReceiveError</code> event.
+  export interface ReceiveErrorInfo {
+    // The socket identifier.
+    socketId: number;
+
+     // The error message.
+    errorMessage: string;
+
+    // An error code indicating what went wrong.
+    error: ReceiveError;
+  }
+
   export interface Bluetooth {
     addProfile(profile: Profile, callback: ResultCallback): void;
     removeProfile(profile: Profile, callback: ResultCallback): void;
@@ -165,14 +189,15 @@ declare module Bluetooth {
     getAdapterState(callback: AdapterStateCallback): void;
     getDevices(options: GetDevicesOptions, callback: ResultCallback): any;
     getProfiles(options: GetProfilesOptions, callback: ProfilesCallback): void;
-    getServices(options: GetServicesOptions, callback: ServicesCallback): void;
 
-    connect(options: ConnectOptions, callback : ResultCallback): any;
+    connect(options: ConnectOptions, callback: ResultCallback): any;
     disconnect(options: DisconnectOptions, callback?: ResultCallback): any;
-    read(options: ReadOptions, callback: DataCallback): void;
-    write(options: WriteOptions, callback: SizeCallback): void;
+    send(options: SendOptions, callback: SizeCallback): void;
+    setSocketPaused(socketId: number, paused: boolean, callback?: ResultCallback): void;
 
-    onConnection: ChromeEvent<Socket>;
     onAdapterStateChanged: ChromeEvent<AdapterState>;
+    onConnection: ChromeEvent<Socket>;
+    onReceive: ChromeEvent<ReceiveInfo>;
+    onReceiveError: ChromeEvent<ReceiveErrorInfo>;
   }
 }
