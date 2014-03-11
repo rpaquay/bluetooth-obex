@@ -122,8 +122,8 @@ module SendFile {
     log('Getting list of devices...')
     var table = document.getElementById("device-list");
     clearChildren(table);
-    chrome.bluetooth.getDevices({
-      deviceCallback: function (device) {
+    chrome.bluetooth.getDevices(devices => {
+      devices.forEach(device => {
         var row = document.createElement("tr");
         table.appendChild(row);
 
@@ -150,9 +150,9 @@ module SendFile {
           sendFileAction(device);
         });
         td.appendChild(objectPushAction);
-      }
-    }, function () {
-        log('Done getting devices.')
+      });
+      
+      log('Done getting devices.')
     });
   }
 

@@ -125,8 +125,8 @@ function ObjectPushClick(device) {
 function ListDevicesClick() {
     var table = document.getElementById("device-list");
     ClearChildren(table);
-    chrome.bluetooth.getDevices({
-        deviceCallback: function (device) {
+    chrome.bluetooth.getDevices(function (devices) {
+        devices.forEach(function (device) {
             log('Got device.');
 
             var row = document.createElement("tr");
@@ -163,8 +163,7 @@ function ListDevicesClick() {
                 ObjectPushClick(device);
             });
             td.appendChild(objectPushAction);
-        }
-    }, function () {
+        });
         log('Done getting devices.');
     });
 }
@@ -269,7 +268,10 @@ function RegisterObjectPushProfile() {
                     processObjectPushConnection(socket);
                 });
             };
-            chrome.bluetooth.getDevices({ deviceCallback: getDeviceCallback }, function () {
+            chrome.bluetooth.getDevices(function (devices) {
+                return devices.forEach(function (device) {
+                    return getDeviceCallback(device);
+                });
             });
         }
     });

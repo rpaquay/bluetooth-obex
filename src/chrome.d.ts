@@ -121,18 +121,6 @@ declare module Bluetooth {
     socketId: number;
   }
 
-  // Options for the getDevices function. If |profile| is not provided, all
-  // devices known to the system are returned.
-  export interface GetDevicesOptions {
-    // Only devices providing |profile| will be returned.
-    profile?: Profile;
-
-    // Called for each matching device.  Note that a service discovery request
-    // must be made to each non-matching device before it can be definitively
-    // excluded.  This can take some time.
-    deviceCallback: DeviceCallback;
-  }
-
   // Options for the getServices function.
   export interface GetServicesOptions {
     // The address of the device to inquire about. |deviceAddress| should be
@@ -187,7 +175,7 @@ declare module Bluetooth {
     removeProfile(profile: Profile, callback: ResultCallback): void;
 
     getAdapterState(callback: AdapterStateCallback): void;
-    getDevices(options: GetDevicesOptions, callback: ResultCallback): any;
+    getDevices(callback: DevicesCallback): any;
     getProfiles(options: GetProfilesOptions, callback: ProfilesCallback): void;
 
     connect(options: ConnectOptions, callback: ResultCallback): any;

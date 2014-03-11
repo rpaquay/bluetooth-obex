@@ -96,13 +96,13 @@ function sendDisconnectRequest(socket: Bluetooth.Socket, callback: (socket: Blue
 function processObjectPushConnection(socket: Bluetooth.Socket): void {
   console.log("Connection opened from peer client.");
 
-//  var parser = new Obex.PacketParser();
-//  parser.setHandler(packet => {
-//  });
+  //  var parser = new Obex.PacketParser();
+  //  parser.setHandler(packet => {
+  //  });
 
-//  readPoll(socket, (data) => {
-//    parser.addData(new Obex.ByteArrayView(data));
-//  });
+  //  readPoll(socket, (data) => {
+  //    parser.addData(new Obex.ByteArrayView(data));
+  //  });
 }
 
 function ObjectPushClick(device) {
@@ -128,8 +128,8 @@ function ObjectPushClick(device) {
 function ListDevicesClick() {
   var table = document.getElementById("device-list");
   ClearChildren(table);
-  chrome.bluetooth.getDevices({
-    deviceCallback: function (device) {
+  chrome.bluetooth.getDevices(devices => {
+    devices.forEach(device => {
       log('Got device.');
 
       var row = document.createElement("tr");
@@ -164,10 +164,8 @@ function ListDevicesClick() {
         ObjectPushClick(device);
       });
       td.appendChild(objectPushAction);
-    }
-  },
-    function () {
-      log('Done getting devices.')
+    });
+    log('Done getting devices.')
   });
 }
 
@@ -271,7 +269,7 @@ function RegisterObjectPushProfile() {
           processObjectPushConnection(socket);
         });
       };
-      chrome.bluetooth.getDevices({ deviceCallback: getDeviceCallback }, () => { });
+      chrome.bluetooth.getDevices(devices => devices.forEach(device => getDeviceCallback(device)));
     }
   });
 }
