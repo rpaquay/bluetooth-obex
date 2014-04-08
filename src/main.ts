@@ -35,13 +35,11 @@ function CreateActionButton(label, caption, callback) {
   return labelElement;
 }
 
-function GetDeviceProfilesClick(device) {
+function GetDeviceProfilesClick(device: Bluetooth.Device) {
   ClearChildren(document.getElementById("profile-list"));
-  chrome.bluetooth.getProfiles({ device: device }, (profiles) => {
-    profiles.forEach(function (profile) {
-      DisplayProfile(profile);
-    });
-  })
+  device.uuids.forEach(uuid => {
+    DisplayProfile(uuid);
+  });
 }
 
 function sendPutRequest(socket: Bluetooth.Socket, callback: (socket: Bluetooth.Socket, response: Obex.Packet) => void) {
@@ -195,45 +193,45 @@ function DisplayAdapterState(state) {
   row.appendChild(td);
 }
 
-function DisplayProfile(profile) {
+function DisplayProfile(uuid: string) {
   var table = document.getElementById("profile-list");
   var row = document.createElement("tr");
   table.appendChild(row);
 
   var td = document.createElement("td");
-  td.innerText = profile.uuid;
+  td.innerText = uuid;
   row.appendChild(td);
 
   var td = document.createElement("td");
-  td.innerText = profile.name;
+  //td.innerText = profile.name;
   row.appendChild(td);
 
   var td = document.createElement("td");
-  td.innerText = profile.channel;
+  //td.innerText = profile.channel;
   row.appendChild(td);
 
   var td = document.createElement("td");
-  td.innerText = profile.psm;
+  //td.innerText = profile.psm;
   row.appendChild(td);
 
   var td = document.createElement("td");
-  td.innerText = profile.requireAuthentication;
+  //td.innerText = profile.requireAuthentication;
   row.appendChild(td);
 
   var td = document.createElement("td");
-  td.innerText = profile.requireAuthorization;
+  //td.innerText = profile.requireAuthorization;
   row.appendChild(td);
 
   var td = document.createElement("td");
-  td.innerText = profile.autoConnect;
+  //td.innerText = profile.autoConnect;
   row.appendChild(td);
 
   var td = document.createElement("td");
-  td.innerText = profile.version;
+  //td.innerText = profile.version;
   row.appendChild(td);
 
   var td = document.createElement("td");
-  td.innerText = profile.features;
+  //td.innerText = profile.features;
   row.appendChild(td);
 }
 

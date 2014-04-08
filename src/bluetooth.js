@@ -51,7 +51,7 @@ var Bluetooth;
 
             //Obex.dumpArrayBuffer(buffer);
             this._responseCallbacks.push(responseCallback);
-            chrome.bluetooth.send({ socketId: this._socket.id, data: buffer }, function (result) {
+            chrome.bluetooth.send(this._socket.id, buffer, function (result) {
                 if (chrome.runtime.lastError) {
                     _this.setError("Error sending packet to peer: " + chrome.runtime.lastError.message);
                     return;
@@ -169,18 +169,18 @@ var Bluetooth;
         }
         // Add a "onConnect" handler for a given device and profile.
         BluetoothConnectionDispatcher.prototype.setHandler = function (device, profile, handler) {
-            var key = this.buildKey(device, profile);
+            var key = this.buildKey(device, profile.uuid);
             this._handers.set(key, handler);
         };
 
-        BluetoothConnectionDispatcher.prototype.buildKey = function (device, profile) {
-            return "<" + device.address.toLowerCase() + ">" + "<" + profile.uuid.toLowerCase() + ">";
+        BluetoothConnectionDispatcher.prototype.buildKey = function (device, uuid) {
+            return "<" + device.address.toLowerCase() + ">" + "<" + uuid.toLowerCase() + ">";
         };
 
         BluetoothConnectionDispatcher.prototype.onConnection = function (socket) {
             try  {
-                console.log("OnConnection: socket id=" + socket.id + ", device name=" + socket.device.name + ", profile id=" + socket.profile.uuid);
-                var key = this.buildKey(socket.device, socket.profile);
+                console.log("OnConnection: socket id=" + socket.id + ", device name=" + socket.device.name + ", profile id=" + socket.uuid);
+                var key = this.buildKey(socket.device, socket.uuid);
                 var handler = this._handers.get(key);
                 if (typeof handler === "undefined") {
                     console.log("No handler registered for given device/profile.");

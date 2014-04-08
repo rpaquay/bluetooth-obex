@@ -73,6 +73,13 @@ declare module Bluetooth {
 
     // Indicates whether the device is currently connected to the system.
     connected?: boolean;
+
+    // UUIDs of protocols, profiles and services advertised by the device.
+    // For classic Bluetooth devices, this list is obtained from EIR data and
+    // SDP tables. For Low Energy devices, this list is obtained from AD and
+    // GATT primary services. For dual mode devices this may be obtained from
+    // both.
+    uuids?: string[];
   }
 
   // Options for the getProfiles function.
@@ -91,26 +98,39 @@ declare module Bluetooth {
   }
 
   export interface Socket {
-    // The remote Bluetooth device associated with this socket.
-    device: Device;
-
-    // The remote Bluetooth profile associated with this socket.
-    profile: Profile ;
-
-    // An identifier for this socket that should be used with the
-    // read/write/disconnect methods.
+    // The socket identifier.
     id: number;
+
+    // The remote Bluetooth device associated with this socket.
+    device: Device ;
+
+    // The remote Bluetooth uuid associated with this socket.
+    uuid: string;
+
+    // Flag indicating whether the socket is left open when the application is
+    // suspended (see <code>SocketProperties.persistent</code>).
+    persistent: boolean;
+
+    // Application-defined string associated with the socket.
+    name?: string;
+
+    // The size of the buffer used to receive data. If no buffer size has been
+    // specified explictly, the value is not provided.
+    bufferSize?: number;
+
+    // Flag indicating whether a connected socket blocks its peer from sending
+    // more data (see <code>setPaused</code>).
+    paused: boolean;
   }
 
   interface AdapterStateCallback { (result: AdapterState): void; }
   interface AddressCallback { (result: string): void; }
   interface BooleanCallback { (result: boolean): void }
   interface DataCallback { (result?: ArrayBuffer): void; }
-  interface DeviceCallback { (device: Device): void; }
+  interface DeviceCallback { (result: Device): void; }
   interface DevicesCallback { (result: Device[]): void; }
   interface NameCallback { (result: string): void; }
   interface OutOfBandPairingDataCallback { (data: OutOfBandPairingData): void; }
-  interface ProfilesCallback { (result: Profile[]): void; }
   interface ResultCallback { (): void; }
   interface SizeCallback { (result: number): void; }
   interface SocketCallback { (result: Socket): void; }
@@ -175,12 +195,12 @@ declare module Bluetooth {
     removeProfile(profile: Profile, callback: ResultCallback): void;
 
     getAdapterState(callback: AdapterStateCallback): void;
+    getDevice(deviceAddress: string, callback: DeviceCallback): any;
     getDevices(callback: DevicesCallback): any;
-    getProfiles(options: GetProfilesOptions, callback: ProfilesCallback): void;
 
     connect(options: ConnectOptions, callback: ResultCallback): any;
     disconnect(options: DisconnectOptions, callback?: ResultCallback): any;
-    send(options: SendOptions, callback: SizeCallback): void;
+    send(socketId: number, data: ArrayBuffer, callback: SizeCallback): void;
     setSocketPaused(socketId: number, paused: boolean, callback?: ResultCallback): void;
 
     onAdapterStateChanged: ChromeEvent<AdapterState>;

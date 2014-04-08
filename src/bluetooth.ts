@@ -47,7 +47,7 @@ module Bluetooth {
       //Obex.dumpArrayBuffer(buffer);
 
       this._responseCallbacks.push(responseCallback);
-      chrome.bluetooth.send({ socketId: this._socket.id, data: buffer }, (result: number) => {
+      chrome.bluetooth.send(this._socket.id, buffer, (result: number) => {
         if (chrome.runtime.lastError) {
           this.setError("Error sending packet to peer: " + chrome.runtime.lastError.message);
           return;
@@ -153,19 +153,19 @@ module Bluetooth {
 
     // Add a "onConnect" handler for a given device and profile.
     public setHandler(device: Bluetooth.Device, profile: Bluetooth.Profile, handler: BluetoothConnectionHandler): void {
-      var key = this.buildKey(device, profile);
+      var key = this.buildKey(device, profile.uuid);
       this._handers.set(key, handler);
     }
 
-    private buildKey(device: Bluetooth.Device, profile: Bluetooth.Profile): string {
+    private buildKey(device: Bluetooth.Device, uuid: string): string {
       return "<" + device.address.toLowerCase() + ">" +
-        "<" + profile.uuid.toLowerCase() + ">";
+        "<" + uuid.toLowerCase() + ">";
     }
 
     private onConnection(socket: Bluetooth.Socket): void {
       try {
-        console.log("OnConnection: socket id=" + socket.id + ", device name=" + socket.device.name + ", profile id=" + socket.profile.uuid);
-        var key = this.buildKey(socket.device, socket.profile);
+        console.log("OnConnection: socket id=" + socket.id + ", device name=" + socket.device.name + ", profile id=" + socket.uuid);
+        var key = this.buildKey(socket.device, socket.uuid);
         var handler = this._handers.get(key);
         if (typeof handler === "undefined") {
           console.log("No handler registered for given device/profile.");
