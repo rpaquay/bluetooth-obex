@@ -91,7 +91,7 @@ function sendDisconnectRequest(socketId: number, callback: (socketId: number, re
   });
 }
 
-function processObjectPushConnection(socket: Bluetooth.Socket): void {
+function processObjectPushConnection(socketId: number): void {
   console.log("Connection opened from peer client.");
 
   //  var parser = new Obex.PacketParser();

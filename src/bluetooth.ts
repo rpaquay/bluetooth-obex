@@ -18,8 +18,8 @@ module Bluetooth {
     constructor(socketId: number) {
       this._socketId = socketId;
       this._parser.setHandler(packet => this.onResponse(packet));
-      this._listener1 = (info: Bluetooth.ReceiveInfo) => this.onSocketReceive(info);
-      this._listener2 = (info: Bluetooth.ReceiveErrorInfo) => this.onSocketReceiveError(info);
+      this._listener1 = (info: BluetoothSocket.ReceiveInfo) => this.onSocketReceive(info);
+      this._listener2 = (info: BluetoothSocket.ReceiveErrorInfo) => this.onSocketReceiveError(info);
       chrome.bluetoothSocket.onReceive.addListener(this._listener1);
       chrome.bluetoothSocket.onReceiveError.addListener(this._listener2);
       chrome.bluetoothSocket.setPaused(this._socketId, false);
@@ -68,13 +68,13 @@ module Bluetooth {
       callback(packet);
     }
 
-    private onSocketReceive(info: Bluetooth.ReceiveInfo) {
+    private onSocketReceive(info: BluetoothSocket.ReceiveInfo) {
       if (info.socketId !== this._socketId)
         return;
       this._parser.addData(new Obex.ByteArrayView(info.data));
     }
 
-    private onSocketReceiveError(info: Bluetooth.ReceiveErrorInfo) {
+    private onSocketReceiveError(info: BluetoothSocket.ReceiveErrorInfo) {
       if (info.socketId !== this._socketId)
         return;
       this.setError("Error reading packet from peer: " + info.errorMessage);

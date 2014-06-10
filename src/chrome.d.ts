@@ -2,7 +2,7 @@ interface Chrome {
   runtime: Runtime;
   fileSystem: any;
   bluetooth: Bluetooth.Bluetooth;
-  bluetoothSocket: Bluetooth.BluetoothSocket;
+  bluetoothSocket: BluetoothSocket.BluetoothSocket;
 }
 declare var chrome: Chrome;
 
@@ -47,43 +47,6 @@ declare module Bluetooth {
 
     // Indicates whether or not the adapter is currently discovering.
     discovering: boolean;
-  }
-
-  export interface OutOfBandPairingData {
-  }
-
-  export interface Profile {
-    // Unique profile identifier, e.g. 00001401-0000-1000-8000-00805F9B23FB
-    uuid: string;
-
-    // Human-readable name of the Profile, e.g. "Health Device"
-    name?: string;
-
-    // The RFCOMM channel id, used when the profile is to be exported to remote
-    // devices.
-    channel?: number;
-
-    // The LS2CAP PSM number, used when the profile is to be exported to remote
-    // deviecs.
-    psm?: number;
-
-    // Specifies whether pairing (and encryption) is required to be able to
-    // connect.
-    requireAuthentication?: boolean;
-
-    // Specifies whether user authorization is required to be able to connect.
-    requireAuthorization?: boolean;
-
-    // Specifies whether this profile will be automatically connected if any
-    // other profile of device also exporting this profile connects to the host.
-    autoConnect?: boolean;
-
-    // Specifies the implemented version of the profile.
-    version?: number;
-
-    // Specifies the profile-specific bit field of features the implementation
-    // supports.
-    features?: number;
   }
 
   export interface Device {
@@ -140,82 +103,10 @@ declare module Bluetooth {
     uuids?: string[];
   }
 
-  // Options for the getProfiles function.
-  export interface GetProfilesOptions {
-    // The remote Bluetooth device to retrieve the exported profiles list from.
-    device: Device;
-  }
-
-  // Options for the write function.
-  export interface SendOptions {
-    // The socket to write to.
-    socketId: number;
-
-    // The data to write.
-    data: ArrayBuffer;
-  }
-
-  export interface Socket {
-    // The socket identifier.
-    id: number;
-
-    // The remote Bluetooth device associated with this socket.
-    device: Device ;
-
-    // The remote Bluetooth uuid associated with this socket.
-    uuid: string;
-
-    // Flag indicating whether the socket is left open when the application is
-    // suspended (see <code>SocketProperties.persistent</code>).
-    persistent: boolean;
-
-    // Application-defined string associated with the socket.
-    name?: string;
-
-    // The size of the buffer used to receive data. If no buffer size has been
-    // specified explictly, the value is not provided.
-    bufferSize?: number;
-
-    // Flag indicating whether a connected socket blocks its peer from sending
-    // more data (see <code>setPaused</code>).
-    paused: boolean;
-  }
-
   interface AdapterStateCallback { (result: AdapterState): void; }
 
-  interface AddressCallback { (result: string): void; }
-  interface BooleanCallback { (result: boolean): void }
-  interface DataCallback { (result?: ArrayBuffer): void; }
   interface GetDeviceCallback { (result: Device): void; }
   interface GetDevicesCallback { (result: Device[]): void; }
-  interface NameCallback { (result: string): void; }
-  interface OutOfBandPairingDataCallback { (data: OutOfBandPairingData): void; }
-  interface ResultCallback { (): void; }
-  interface SizeCallback { (result: number): void; }
-  interface SocketCallback { (result: Socket): void; }
-
-  // Options for the disconnect function.
-  export interface DisconnectOptions {
-    // The socket to disconnect.
-    socketId: number;
-  }
-
-  // Options for the getServices function.
-  export interface GetServicesOptions {
-    // The address of the device to inquire about. |deviceAddress| should be
-    // in the format 'XX:XX:XX:XX:XX:XX'.
-    deviceAddress: string;
-  }
-
-
-  // Options for the connect function.
-  export interface ConnectOptions {
-    // The connection is made to |device|.
-    device: Device;
-
-    // The connection is made to |profile|.
-    profile: Profile;
-  }
 
   // Callback from the <code>startDiscovery</code> method.
   interface StartDiscoveryCallback { void(); }
@@ -268,23 +159,10 @@ declare module Bluetooth {
     // out of range for long enough to be considered unavailable again, and
     // when a paired device is removed.
     onDeviceRemoved: ChromeEvent<Device>;
-
-/*
-    addProfile(profile: Profile, callback: ResultCallback): void;
-    removeProfile(profile: Profile, callback: ResultCallback): void;
-
-
-    connect(options: ConnectOptions, callback: ResultCallback): any;
-    disconnect(options: DisconnectOptions, callback?: ResultCallback): any;
-    send(socketId: number, data: ArrayBuffer, callback: SizeCallback): void;
-    setSocketPaused(socketId: number, paused: boolean, callback?: ResultCallback): void;
-
-    onAdapterStateChanged: ChromeEvent<AdapterState>;
-    onConnection: ChromeEvent<Socket>;
-    onReceive: ChromeEvent<ReceiveInfo>;
-    onReceiveError: ChromeEvent<ReceiveErrorInfo>;
-*/
   }
+}
+
+declare module BluetoothSocket {
 
   // The socket properties specified in the $ref:create or $ref:update
   // function. Each property is optional. If a property value is not specified,

@@ -46,10 +46,10 @@ module SendFile {
     return labelElement;
   }
 
-  function registerObexPushProfile(callback: (profile: Bluetooth.Profile) => void) {
+  function registerObexPushProfile(callback: (profile: string) => void) {
     var uuid = kOBEXObjectPush.toLowerCase();
     var profile = { uuid: uuid };
-    callback(profile);
+    callback(uuid);
     //chrome.bluetooth.addProfile(profile, () => {
     //  if (chrome.runtime.lastError) {
     //    log("Error adding \"Obex Push\" profile: " + chrome.runtime.lastError.message + " (continue anyways).");
@@ -84,9 +84,9 @@ module SendFile {
   function sendFileToDevice(device: Bluetooth.Device, fileName: string, contents: ArrayBuffer) {
     log("Sending file \"" + fileName + "\" of length " + contents.byteLength + ".");
 
-    registerObexPushProfile(profile => {
+    registerObexPushProfile(profile_uuid => {
       chrome.bluetoothSocket.create({}, (createInfo) => {
-        chrome.bluetoothSocket.connect(createInfo.socketId, device.address, profile.uuid, () => {
+        chrome.bluetoothSocket.connect(createInfo.socketId, device.address, profile_uuid, () => {
           if (chrome.runtime.lastError) {
             log("Error connecting to Object Push profile: " + chrome.runtime.lastError.message);
             return;
