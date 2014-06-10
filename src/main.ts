@@ -42,7 +42,7 @@ function GetDeviceProfilesClick(device: Bluetooth.Device) {
   });
 }
 
-function sendPutRequest(socket: Bluetooth.Socket, callback: (socket: Bluetooth.Socket, response: Obex.Packet) => void) {
+function sendPutRequest(socketId: number, callback: (socketId: number, response: Obex.Packet) => void) {
   var request = new Obex.PutRequestBuilder();
   request.isFinal = true;
   request.length = 3;
@@ -53,41 +53,41 @@ function sendPutRequest(socket: Bluetooth.Socket, callback: (socket: Bluetooth.S
   view.setUint8(1, 'b'.charCodeAt(0));
   view.setUint8(2, 'c'.charCodeAt(0));
 
-  var requestProcessor = new Bluetooth.RequestProcessor(socket);
+  var requestProcessor = new Bluetooth.RequestProcessor(socketId);
   requestProcessor.sendRequest(request, response => {
     console.log("response.code=" + response.opCode);
     console.log("response.isFinal=" + response.isFinal);
 
     var headers = new Obex.HeaderListParser(response.data).parse();
     console.log(headers);
-    callback(socket, response);
+    callback(socketId, response);
   });
 }
 
-function sendConnectRequest(socket: Bluetooth.Socket, callback: (socket: Bluetooth.Socket, response: Obex.ConnectResponse) => void) {
+function sendConnectRequest(socketId: number, callback: (socketId: number, response: Obex.ConnectResponse) => void) {
   var request = new Obex.ConnectRequestBuilder();
   request.count = 1;
   request.length = 100;
 
-  var requestProcessor = new Bluetooth.RequestProcessor(socket);
+  var requestProcessor = new Bluetooth.RequestProcessor(socketId);
   requestProcessor.sendRequest(request, response => {
     console.log("response.code=" + response.opCode);
     console.log("response.isFinal=" + response.isFinal);
     var connectResponse = new Obex.ConnectResponse(response);
     console.log(connectResponse);
-    callback(socket, connectResponse);
+    callback(socketId, connectResponse);
   });
 }
 
-function sendDisconnectRequest(socket: Bluetooth.Socket, callback: (socket: Bluetooth.Socket, response: Obex.Packet) => void): void {
+function sendDisconnectRequest(socketId: number, callback: (socketId: number, response: Obex.Packet) => void): void {
   var request = new Obex.DisconnectRequestBuilder();
 
-  var requestProcessor = new Bluetooth.RequestProcessor(socket);
+  var requestProcessor = new Bluetooth.RequestProcessor(socketId);
   requestProcessor.sendRequest(request, response => {
     console.log("response.code=" + response.opCode);
     console.log("response.isFinal=" + response.isFinal);
     console.log(response);
-    callback(socket, response);
+    callback(socketId, response);
   });
 }
 
@@ -107,20 +107,19 @@ function ObjectPushClick(device) {
   var uuid = kOBEXObjectPush.toLowerCase();
   var profile = { uuid: uuid };
 
-  Bluetooth.connectionDispatcher.setHandler(device, profile, (socket) => {
-    sendPutRequest(socket, (socket, response) => {
-      chrome.bluetooth.disconnect({ socketId: socket.id }, () => {
-        console.log("Socket disconnected!");
+  chrome.bluetoothSocket.create({}, (createInfo) => {
+    chrome.bluetoothSocket.connect(createInfo.socketId, device.address, profile.uuid, () => {
+      if (chrome.runtime.lastError) {
+        log("Error connecting to Object Push profile: " + chrome.runtime.lastError.message);
+        return;
+      }
+      sendPutRequest(createInfo.socketId, (socketId, response) => {
+        chrome.bluetoothSocket.disconnect(socketId, () => {
+          console.log("Socket disconnected!");
+        });
       });
     });
   });
-
-  chrome.bluetooth.connect({ device: device, profile: profile }, function () {
-    if (chrome.runtime.lastError)
-      log("Error connecting to Object Push profile: " + chrome.runtime.lastError.message);
-    else
-      log("Successfully connected to Object Push profile.");
-  })
 }
 
 function ListDevicesClick() {
@@ -257,31 +256,32 @@ function RegisterObjectPushProfile() {
   var profile = {
     uuid: kOBEXObjectPush
   };
-  chrome.bluetooth.addProfile(profile, function () {
-    if (chrome.runtime.lastError)
-      log("Error registering profile: " + chrome.runtime.lastError.message);
-    else {
-      log("Profile successfully registed.");
-      var getDeviceCallback = (device: Bluetooth.Device) => {
-        Bluetooth.connectionDispatcher.setHandler(device, profile, (socket: Bluetooth.Socket) => {
-          processObjectPushConnection(socket);
-        });
-      };
-      chrome.bluetooth.getDevices(devices => devices.forEach(device => getDeviceCallback(device)));
-    }
-  });
+  // TODO: use "Listen" API
+  //chrome.bluetooth.addProfile(profile, function () {
+  //  if (chrome.runtime.lastError)
+  //    log("Error registering profile: " + chrome.runtime.lastError.message);
+  //  else {
+  //    log("Profile successfully registed.");
+  //    var getDeviceCallback = (device: Bluetooth.Device) => {
+  //      Bluetooth.connectionDispatcher.setHandler(device, profile, (socket: Bluetooth.Socket) => {
+  //        processObjectPushConnection(socket);
+  //      });
+  //    };
+  //    chrome.bluetooth.getDevices(devices => devices.forEach(device => getDeviceCallback(device)));
+  //  }
+  //});
 }
 
 function UnregisterObjectPushProfile() {
   var profile = {
     uuid: kOBEXObjectPush
   };
-  chrome.bluetooth.removeProfile(profile, function () {
-    if (chrome.runtime.lastError)
-      log("Error unregistering profile: " + chrome.runtime.lastError.message);
-    else
-      log("Profile successfully unregistered.");
-  });
+  //chrome.bluetooth.removeProfile(profile, function () {
+  //  if (chrome.runtime.lastError)
+  //    log("Error unregistering profile: " + chrome.runtime.lastError.message);
+  //  else
+  //    log("Profile successfully unregistered.");
+  //});
 }
 
 function OnAdapterStateChanged(state) {

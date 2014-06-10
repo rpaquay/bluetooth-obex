@@ -49,19 +49,18 @@ var SendFile;
     function registerObexPushProfile(callback) {
         var uuid = kOBEXObjectPush.toLowerCase();
         var profile = { uuid: uuid };
-
-        chrome.bluetooth.addProfile(profile, function () {
-            if (chrome.runtime.lastError) {
-                log("Error adding \"Obex Push\" profile: " + chrome.runtime.lastError.message + " (continue anyways).");
-            }
-
-            callback(profile);
-            return;
-        });
+        callback(profile);
+        //chrome.bluetooth.addProfile(profile, () => {
+        //  if (chrome.runtime.lastError) {
+        //    log("Error adding \"Obex Push\" profile: " + chrome.runtime.lastError.message + " (continue anyways).");
+        //  }
+        //  callback(profile);
+        //  return;
+        //});
     }
 
-    function sendFileToSocket(socket, name, contents, callback) {
-        var requestProcessor = new Bluetooth.RequestProcessor(socket);
+    function sendFileToSocket(socketId, name, contents, callback) {
+        var requestProcessor = new Bluetooth.RequestProcessor(socketId);
         var processor = new Bluetooth.SendFileProcessor(requestProcessor, name, contents);
         processor.setErrorHandler(function (message) {
             log("Error sending file: " + message);
@@ -84,19 +83,18 @@ var SendFile;
         log("Sending file \"" + fileName + "\" of length " + contents.byteLength + ".");
 
         registerObexPushProfile(function (profile) {
-            Bluetooth.connectionDispatcher.setHandler(device, profile, function (socket) {
-                sendFileToSocket(socket, fileName, contents, function () {
-                    chrome.bluetooth.disconnect({ socketId: socket.id }, function () {
-                        log("Socket closed.");
+            chrome.bluetoothSocket.create({}, function (createInfo) {
+                chrome.bluetoothSocket.connect(createInfo.socketId, device.address, profile.uuid, function () {
+                    if (chrome.runtime.lastError) {
+                        log("Error connecting to Object Push profile: " + chrome.runtime.lastError.message);
+                        return;
+                    }
+                    sendFileToSocket(createInfo.socketId, fileName, contents, function () {
+                        chrome.bluetoothSocket.disconnect(createInfo.socketId, function () {
+                            log("Socket closed.");
+                        });
                     });
                 });
-            });
-
-            chrome.bluetooth.connect({ device: device, profile: profile }, function () {
-                if (chrome.runtime.lastError)
-                    log("Error connecting to Object Push profile: " + chrome.runtime.lastError.message);
-                else
-                    log("Successfully connected to Object Push profile.");
             });
         });
     }

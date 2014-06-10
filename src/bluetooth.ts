@@ -7,7 +7,7 @@ module Bluetooth {
   }
 
   export class RequestProcessor {
-    private _socket: Bluetooth.Socket;
+    private _socketId: number;
     private _parser = new Obex.PacketParser();
     private _errorHandler: () => void;
     private _errorMessage = "";
@@ -15,14 +15,14 @@ module Bluetooth {
     private _listener1: any;
     private _listener2: any;
 
-    public constructor(socket: Bluetooth.Socket) {
-      this._socket = socket;
+    constructor(socketId: number) {
+      this._socketId = socketId;
       this._parser.setHandler(packet => this.onResponse(packet));
       this._listener1 = (info: Bluetooth.ReceiveInfo) => this.onSocketReceive(info);
       this._listener2 = (info: Bluetooth.ReceiveErrorInfo) => this.onSocketReceiveError(info);
-      chrome.bluetooth.onReceive.addListener(this._listener1);
-      chrome.bluetooth.onReceiveError.addListener(this._listener2);
-      chrome.bluetooth.setSocketPaused(socket.id, false);
+      chrome.bluetoothSocket.onReceive.addListener(this._listener1);
+      chrome.bluetoothSocket.onReceiveError.addListener(this._listener2);
+      chrome.bluetoothSocket.setPaused(this._socketId, false);
     }
 
     public get errorMessage(): string { return this._errorMessage; }
@@ -47,7 +47,7 @@ module Bluetooth {
       //Obex.dumpArrayBuffer(buffer);
 
       this._responseCallbacks.push(responseCallback);
-      chrome.bluetooth.send(this._socket.id, buffer, (result: number) => {
+      chrome.bluetoothSocket.send(this._socketId, buffer, (result: number) => {
         if (chrome.runtime.lastError) {
           this.setError("Error sending packet to peer: " + chrome.runtime.lastError.message);
           return;
@@ -69,17 +69,17 @@ module Bluetooth {
     }
 
     private onSocketReceive(info: Bluetooth.ReceiveInfo) {
-      if (info.socketId !== this._socket.id)
+      if (info.socketId !== this._socketId)
         return;
       this._parser.addData(new Obex.ByteArrayView(info.data));
     }
 
     private onSocketReceiveError(info: Bluetooth.ReceiveErrorInfo) {
-      if (info.socketId !== this._socket.id)
+      if (info.socketId !== this._socketId)
         return;
       this.setError("Error reading packet from peer: " + info.errorMessage);
-      chrome.bluetooth.onReceive.removeListener(this._listener1);
-      chrome.bluetooth.onReceiveError.removeListener(this._listener2);
+      chrome.bluetoothSocket.onReceive.removeListener(this._listener1);
+      chrome.bluetoothSocket.onReceiveError.removeListener(this._listener2);
     }
   }
 
@@ -137,48 +137,4 @@ module Bluetooth {
       });
     }
   }
-
-  export interface BluetoothConnectionHandler {
-    (socket: Bluetooth.Socket): void;
-  }
-
-  export class BluetoothConnectionDispatcher {
-    private _handers = new Core.StringMap<BluetoothConnectionHandler>();
-    private _listener: BluetoothConnectionHandler;
-
-    public constructor() {
-      this._listener = (socket: Bluetooth.Socket) => this.onConnection(socket);
-      chrome.bluetooth.onConnection.addListener(this._listener);
-    }
-
-    // Add a "onConnect" handler for a given device and profile.
-    public setHandler(device: Bluetooth.Device, profile: Bluetooth.Profile, handler: BluetoothConnectionHandler): void {
-      var key = this.buildKey(device, profile.uuid);
-      this._handers.set(key, handler);
-    }
-
-    private buildKey(device: Bluetooth.Device, uuid: string): string {
-      return "<" + device.address.toLowerCase() + ">" +
-        "<" + uuid.toLowerCase() + ">";
-    }
-
-    private onConnection(socket: Bluetooth.Socket): void {
-      try {
-        console.log("OnConnection: socket id=" + socket.id + ", device name=" + socket.device.name + ", profile id=" + socket.uuid);
-        var key = this.buildKey(socket.device, socket.uuid);
-        var handler = this._handers.get(key);
-        if (typeof handler === "undefined") {
-          console.log("No handler registered for given device/profile.");
-          return;
-        }
-
-        handler(socket);
-      }
-      catch (e) {
-        console.error(e);
-        throw e;
-      }
-    }
-  }
-  export var connectionDispatcher = new BluetoothConnectionDispatcher();
 }

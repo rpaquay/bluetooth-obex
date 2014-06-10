@@ -3,12 +3,12 @@
 var Bluetooth;
 (function (Bluetooth) {
     var RequestProcessor = (function () {
-        function RequestProcessor(socket) {
+        function RequestProcessor(socketId) {
             var _this = this;
             this._parser = new Obex.PacketParser();
             this._errorMessage = "";
             this._responseCallbacks = [];
-            this._socket = socket;
+            this._socketId = socketId;
             this._parser.setHandler(function (packet) {
                 return _this.onResponse(packet);
             });
@@ -18,9 +18,9 @@ var Bluetooth;
             this._listener2 = function (info) {
                 return _this.onSocketReceiveError(info);
             };
-            chrome.bluetooth.onReceive.addListener(this._listener1);
-            chrome.bluetooth.onReceiveError.addListener(this._listener2);
-            chrome.bluetooth.setSocketPaused(socket.id, false);
+            chrome.bluetoothSocket.onReceive.addListener(this._listener1);
+            chrome.bluetoothSocket.onReceiveError.addListener(this._listener2);
+            chrome.bluetoothSocket.setPaused(this._socketId, false);
         }
         Object.defineProperty(RequestProcessor.prototype, "errorMessage", {
             get: function () {
@@ -51,7 +51,7 @@ var Bluetooth;
 
             //Obex.dumpArrayBuffer(buffer);
             this._responseCallbacks.push(responseCallback);
-            chrome.bluetooth.send(this._socket.id, buffer, function (result) {
+            chrome.bluetoothSocket.send(this._socketId, buffer, function (result) {
                 if (chrome.runtime.lastError) {
                     _this.setError("Error sending packet to peer: " + chrome.runtime.lastError.message);
                     return;
@@ -73,17 +73,17 @@ var Bluetooth;
         };
 
         RequestProcessor.prototype.onSocketReceive = function (info) {
-            if (info.socketId !== this._socket.id)
+            if (info.socketId !== this._socketId)
                 return;
             this._parser.addData(new Obex.ByteArrayView(info.data));
         };
 
         RequestProcessor.prototype.onSocketReceiveError = function (info) {
-            if (info.socketId !== this._socket.id)
+            if (info.socketId !== this._socketId)
                 return;
             this.setError("Error reading packet from peer: " + info.errorMessage);
-            chrome.bluetooth.onReceive.removeListener(this._listener1);
-            chrome.bluetooth.onReceiveError.removeListener(this._listener2);
+            chrome.bluetoothSocket.onReceive.removeListener(this._listener1);
+            chrome.bluetoothSocket.onReceiveError.removeListener(this._listener2);
         };
         return RequestProcessor;
     })();
@@ -157,45 +157,5 @@ var Bluetooth;
         return SendFileProcessor;
     })();
     Bluetooth.SendFileProcessor = SendFileProcessor;
-
-    var BluetoothConnectionDispatcher = (function () {
-        function BluetoothConnectionDispatcher() {
-            var _this = this;
-            this._handers = new Core.StringMap();
-            this._listener = function (socket) {
-                return _this.onConnection(socket);
-            };
-            chrome.bluetooth.onConnection.addListener(this._listener);
-        }
-        // Add a "onConnect" handler for a given device and profile.
-        BluetoothConnectionDispatcher.prototype.setHandler = function (device, profile, handler) {
-            var key = this.buildKey(device, profile.uuid);
-            this._handers.set(key, handler);
-        };
-
-        BluetoothConnectionDispatcher.prototype.buildKey = function (device, uuid) {
-            return "<" + device.address.toLowerCase() + ">" + "<" + uuid.toLowerCase() + ">";
-        };
-
-        BluetoothConnectionDispatcher.prototype.onConnection = function (socket) {
-            try  {
-                console.log("OnConnection: socket id=" + socket.id + ", device name=" + socket.device.name + ", profile id=" + socket.uuid);
-                var key = this.buildKey(socket.device, socket.uuid);
-                var handler = this._handers.get(key);
-                if (typeof handler === "undefined") {
-                    console.log("No handler registered for given device/profile.");
-                    return;
-                }
-
-                handler(socket);
-            } catch (e) {
-                console.error(e);
-                throw e;
-            }
-        };
-        return BluetoothConnectionDispatcher;
-    })();
-    Bluetooth.BluetoothConnectionDispatcher = BluetoothConnectionDispatcher;
-    Bluetooth.connectionDispatcher = new BluetoothConnectionDispatcher();
 })(Bluetooth || (Bluetooth = {}));
 //# sourceMappingURL=bluetooth.js.map
