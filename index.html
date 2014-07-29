@@ -9,55 +9,54 @@
     <script src="src/main.js"></script>
   </head>
   <body>
-    <fieldset>
+    <div id="top">
+    <fieldset style="border-style:groove">
       <legend>Bluetooth Adapter and Devices</legend>
       <input type="button" id="get-adapter-state" value="Adapter State" />
       <input type="button" id="list-devices" value="List Devices" />
+      <input type="button" id="start-discovery" value="Start discovery" />
+      <input type="button" id="stop-discovery" value="Stop discovery" />
       <input type="button" id="register-object-push-profile" value="Register &quot;Object Push&quot; profile" />
       <input type="button" id="unregister-object-push-profile" value="Unregister &quot;Object Push&quot; profile" />
     </fieldset>
-    <table>
-      <caption>Adapter State</caption>
-      <thead>
-        <tr><th>Address</th><th>Name</th><th>Powered</th><th>Available</th><th>Discovering</th></tr>
-      </thead>
-      <tbody id="adapter-state">
-      </tbody>
-    </table>
-    <table>
-      <caption>Device list</caption>
-      <thead>
-        <tr>
-          <th>Address</th>
-          <th>Name</th>
-          <th>Paired</th>
-          <th>Connected</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody id="device-list">
-      </tbody>
-    </table>
-    <table>
-      <caption>Profile list</caption>
-      <thead>
-        <tr>
-          <th>UUID</th>
-          <th>Name</th>
-          <th>channel</th>
-          <th>PSM</th>
-          <th>requireAuthentication</th>
-          <th>requireAuthorization</th>
-          <th>autoConnect</th>
-          <th>version</th>
-          <th>features</th>
-        </tr>
-      </thead>
-      <tbody id="profile-list">
-      </tbody>
-    </table>
-    <div id="messages-container">
-      <ul id="messages-ul" class="messages"></ul>
     </div>
-  </body>
+      <div id="main">
+        <div>
+          <table>
+            <caption>Adapter State</caption>
+            <thead>
+              <tr><th>Address</th><th>Name</th><th>Powered</th><th>Available</th><th>Discovering</th></tr>
+            </thead>
+            <tbody id="adapter-state"></tbody>
+          </table>
+          <table>
+            <caption>Device list</caption>
+            <thead>
+              <tr>
+                <th>Address</th>
+                <th>Name</th>
+                <th>Paired</th>
+                <th>Connected</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="device-list"></tbody>
+          </table>
+          <table>
+            <caption>Service list</caption>
+            <thead>
+              <tr>
+                <th>UUID</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="profile-list"></tbody>
+          </table>
+        </div>
+        <div id="messages-container" style="border-style:groove">
+          <p>Log messages</p>
+          <ul id="messages-ul" class="messages"></ul>
+        </div>
+      </div>
+</body>
 </html>

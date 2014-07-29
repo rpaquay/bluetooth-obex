@@ -49,7 +49,7 @@ var SendFile;
     function registerObexPushProfile(callback) {
         var uuid = kOBEXObjectPush.toLowerCase();
         var profile = { uuid: uuid };
-        callback(profile);
+        callback(uuid);
         //chrome.bluetooth.addProfile(profile, () => {
         //  if (chrome.runtime.lastError) {
         //    log("Error adding \"Obex Push\" profile: " + chrome.runtime.lastError.message + " (continue anyways).");
@@ -82,9 +82,13 @@ var SendFile;
     function sendFileToDevice(device, fileName, contents) {
         log("Sending file \"" + fileName + "\" of length " + contents.byteLength + ".");
 
-        registerObexPushProfile(function (profile) {
+        registerObexPushProfile(function (profile_uuid) {
             chrome.bluetoothSocket.create({}, function (createInfo) {
-                chrome.bluetoothSocket.connect(createInfo.socketId, device.address, profile.uuid, function () {
+                if (chrome.runtime.lastError) {
+                    log("Error creating bluetooth socket: " + chrome.runtime.lastError.message);
+                    return;
+                }
+                chrome.bluetoothSocket.connect(createInfo.socketId, device.address, profile_uuid, function () {
                     if (chrome.runtime.lastError) {
                         log("Error connecting to Object Push profile: " + chrome.runtime.lastError.message);
                         return;
@@ -154,7 +158,26 @@ var SendFile;
     }
 
     function Setup() {
+        var button = document.getElementById("device-details");
+        button.onclick = function (ev) {
+            chrome.app.window.create('../index.html', {
+                id: "device-details-window",
+                bounds: {
+                    width: 640,
+                    height: 480
+                }
+            });
+        };
         displayDevices();
+        chrome.bluetooth.onDeviceAdded.addListener(function (device) {
+            log("Device added: " + device.address + ", name=" + device.name);
+        });
+        chrome.bluetooth.onDeviceRemoved.addListener(function (device) {
+            log("Device removed: " + device.address + ", name=" + device.name);
+        });
+        chrome.bluetooth.onDeviceChanged.addListener(function (device) {
+            log("Device changed: " + device.address + ", name=" + device.name);
+        });
     }
 
     window.onload = function () {

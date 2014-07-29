@@ -7,7 +7,11 @@ interface Chrome {
 declare var chrome: Chrome;
 
 interface Runtime {
-  lastError: any;
+  lastError: LastError;
+}
+
+interface LastError {
+  message?: string;
 }
 
 interface ChromeEventListener<T> {
@@ -109,10 +113,10 @@ declare module Bluetooth {
   interface GetDevicesCallback { (result: Device[]): void; }
 
   // Callback from the <code>startDiscovery</code> method.
-  interface StartDiscoveryCallback { void(); }
+  interface StartDiscoveryCallback { (): void; }
 
   // Callback from the <code>stopDiscovery</code> method.
-  interface StopDiscoveryCallback { void(); }
+  interface StopDiscoveryCallback { (): void; }
 
   export interface Bluetooth {
     // Get information about the Bluetooth adapter.

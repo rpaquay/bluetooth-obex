@@ -86,6 +86,10 @@ module SendFile {
 
     registerObexPushProfile(profile_uuid => {
       chrome.bluetoothSocket.create({}, (createInfo) => {
+        if (chrome.runtime.lastError) {
+          log("Error creating bluetooth socket: " + chrome.runtime.lastError.message);
+          return;
+        }
         chrome.bluetoothSocket.connect(createInfo.socketId, device.address, profile_uuid, () => {
           if (chrome.runtime.lastError) {
             log("Error connecting to Object Push profile: " + chrome.runtime.lastError.message);
@@ -156,7 +160,26 @@ module SendFile {
   }
 
   function Setup() {
+    var button = document.getElementById("device-details");
+    button.onclick = (ev) => {
+      (<any>chrome).app.window.create('../index.html', {
+        id: "device-details-window",
+        bounds: {
+          width: 640,
+          height: 480
+        }
+      });
+    }
     displayDevices();
+    chrome.bluetooth.onDeviceAdded.addListener(device => {
+      log("Device added: " + device.address + ", name=" + device.name);
+    });
+    chrome.bluetooth.onDeviceRemoved.addListener(device => {
+      log("Device removed: " + device.address + ", name=" + device.name);
+    });
+    chrome.bluetooth.onDeviceChanged.addListener(device => {
+      log("Device changed: " + device.address + ", name=" + device.name);
+    });
   }
 
   window.onload = function () {
