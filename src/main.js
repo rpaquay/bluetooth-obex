@@ -131,12 +131,12 @@ function ObjectPushClick(device) {
 }
 
 function ListDevicesClick() {
-    var table = document.getElementById("device-list");
-    ClearChildren(table);
     chrome.bluetooth.getDevices(function (devices) {
-        devices.forEach(function (device) {
-            log('Got device.');
+        log('Got devices.');
+        var table = document.getElementById("device-list");
+        ClearChildren(table);
 
+        devices.forEach(function (device) {
             var row = document.createElement("tr");
             table.appendChild(row);
 
@@ -219,6 +219,16 @@ function ConnectToService(device, uuid, container) {
         }
         log("Socket OK!");
         container.socketId = info.socketId;
+        chrome.bluetoothSocket.onReceive.addListener(function (info) {
+            log("Data received on socket " + info.socketId + ", length=" + info.data.byteLength);
+        });
+        chrome.bluetoothSocket.onReceiveError.addListener(function (info) {
+            log("Error receiving data on socket " + info.socketId + ", error code=" + info.error + ", message=" + info.errorMessage);
+            chrome.bluetoothSocket.close(info.socketId, function () {
+                log("socket closed");
+                container.socketId = -1;
+            });
+        });
         chrome.bluetoothSocket.connect(info.socketId, device.address, uuid, function () {
             if (chrome.runtime.lastError) {
                 log("Error connecting to socket: " + chrome.runtime.lastError.message);
@@ -327,11 +337,12 @@ function UnregisterObjectPushProfile() {
 }
 
 function OnAdapterStateChanged(state) {
-    log("Adapter changed: " + state.address + ", name=" + state.name + "discovering=" + state.discovering);
+    log("Adapter changed: " + state.address + ", name=" + state.name + ", discovering=" + state.discovering);
     DisplayAdapterState(state);
 }
 
 function StartDiscovery() {
+    log("startDiscovery start.");
     chrome.bluetooth.startDiscovery(function () {
         if (chrome.runtime.lastError) {
             log("startDiscovery error: " + chrome.runtime.lastError.message);
@@ -343,6 +354,7 @@ function StartDiscovery() {
 }
 
 function StopDiscovery() {
+    log("stopDiscovery start.");
     chrome.bluetooth.stopDiscovery(function () {
         if (chrome.runtime.lastError) {
             log("stopDiscovery error: " + chrome.runtime.lastError.message);
@@ -375,17 +387,18 @@ function Setup() {
     //var stream = new Obex.ByteStream();
     //request.serialize(stream);
     //Obex.dumpArrayBuffer(stream.toArrayBuffer());
-    chrome.bluetooth.onDeviceAdded.addListener(function (device) {
-        log("Device added: " + device.address + ", name=" + device.name + ", service count=" + device.uuids.length);
+    var listDevices = function (action, device) {
+        log("Device " + action + ": " + "address=" + device.address + ", name=" + device.name + ", connected=" + device.connected + ", paired=" + device.paired + ", class=" + device.deviceClass + ", id=" + device.deviceId + ", service count=" + device.uuids.length);
         ListDevicesClick();
+    };
+    chrome.bluetooth.onDeviceAdded.addListener(function (device) {
+        return listDevices("added", device);
     });
     chrome.bluetooth.onDeviceRemoved.addListener(function (device) {
-        log("Device removed: " + device.address + ", name=" + device.name + ", service count=" + device.uuids.length);
-        ListDevicesClick();
+        return listDevices("removed", device);
     });
     chrome.bluetooth.onDeviceChanged.addListener(function (device) {
-        log("Device changed: " + device.address + ", name=" + device.name + ", service count=" + device.uuids.length);
-        ListDevicesClick();
+        return listDevices("changed", device);
     });
 }
 
